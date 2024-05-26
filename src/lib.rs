@@ -1,0 +1,329 @@
+use axum::{
+    body::{to_bytes, Body},
+    extract::{ws::WebSocket, FromRequestParts, Request, WebSocketUpgrade},
+    handler::Handler,
+    http::request::Parts,
+    response::{Html, IntoResponse},
+    routing::{get, MethodRouter},
+};
+use std::{convert::Infallible, fmt::Display, ops::Add};
+
+#[derive(Default)]
+pub struct Element {
+    content: String,
+}
+
+#[derive(Default)]
+pub struct ElementParams {
+    children: Element,
+    attributes: Attributes,
+}
+
+#[derive(Default)]
+pub struct Attributes {
+    pub list: Vec<(String, String)>,
+}
+
+impl std::fmt::Display for Attributes {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        for (attribute, value) in &self.list {
+            write!(f, " {attribute}=\"{value}\"")?;
+        }
+
+        Ok(())
+    }
+}
+
+#[macro_export]
+macro_rules! attrs {
+    ( $( ($attr:expr, $value:expr) ),* ) => {
+        $crate::Attributes {
+            list: vec![$( ($attr.to_string(), $value.to_string()), )*],
+        }
+    };
+}
+
+impl From<()> for Element {
+    fn from(_val: ()) -> Self {
+        Element {
+            content: "".to_string(),
+        }
+    }
+}
+impl From<&'static str> for Element {
+    fn from(val: &'static str) -> Self {
+        Element {
+            content: val.to_string(),
+        }
+    }
+}
+impl<T: Display> From<State<T>> for Element {
+    fn from(value: State<T>) -> Self {
+        Element {
+            content: format!(
+                "<span data-coaxial-id=\"{}\">{}</span>",
+                value.id, value.value
+            ),
+        }
+    }
+}
+
+impl From<()> for ElementParams {
+    fn from(_val: ()) -> Self {
+        ElementParams::default()
+    }
+}
+impl From<&'static str> for ElementParams {
+    fn from(children: &'static str) -> Self {
+        ElementParams {
+            children: children.into(),
+            attributes: Attributes::default(),
+        }
+    }
+}
+impl From<Element> for ElementParams {
+    fn from(children: Element) -> Self {
+        ElementParams {
+            children,
+            attributes: Attributes::default(),
+        }
+    }
+}
+impl<T: Display> From<State<T>> for ElementParams {
+    fn from(state: State<T>) -> Self {
+        ElementParams {
+            children: state.into(),
+            attributes: Attributes::default(),
+        }
+    }
+}
+
+impl From<Vec<(String, String)>> for Attributes {
+    fn from(list: Vec<(String, String)>) -> Self {
+        Self { list }
+    }
+}
+
+impl<C: Into<Element>, A: Into<Attributes>> From<(C, A)> for ElementParams {
+    fn from((children, attributes): (C, A)) -> Self {
+        ElementParams {
+            children: children.into(),
+            attributes: attributes.into(),
+        }
+    }
+}
+
+impl Add<Self> for Element {
+    type Output = Self;
+
+    fn add(mut self, rhs: Element) -> Self::Output {
+        self.content.push_str(&rhs.content);
+        self
+    }
+}
+
+macro_rules! make_element {
+    ($ident:ident) => {
+        pub fn $ident(params: impl Into<ElementParams>) -> Element {
+            let ElementParams {
+                mut children,
+                attributes,
+            } = params.into();
+
+            let attributes = attributes.to_string();
+
+            children.content = format!(
+                "<{}{attributes}>{}</{}>",
+                stringify!($ident),
+                children.content,
+                stringify!($ident)
+            );
+
+            children
+        }
+    };
+}
+
+make_element!(div);
+make_element!(p);
+make_element!(button);
+
+pub struct Context {
+    uuid: String,
+    index: u64,
+}
+
+impl Context {
+    pub fn new() -> Self {
+        Self {
+            uuid: "hi".to_string(),
+            index: 0,
+        }
+    }
+
+    pub fn use_state<T>(&mut self, value: T) -> State<T> {
+        self.index += 1;
+        State {
+            value,
+            id: format!("{}-{}", self.uuid, self.index),
+        }
+    }
+
+    pub fn use_closure<F>(&mut self, closure: F) -> Closure {
+        // TODO
+        Closure {}
+    }
+
+    pub fn with(self, element: Element) -> Response {
+        // TODO add something to connect via web-socket
+
+        Response {
+            content: element.content,
+        }
+    }
+}
+
+pub struct State<T> {
+    value: T,
+    id: String,
+}
+impl<T> State<T> {
+    pub fn get(&self) -> &T {
+        &self.value
+    }
+
+    pub fn set(&self, value: T) {
+        todo!()
+    }
+}
+
+pub struct Closure {}
+impl Display for Closure {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "alert('unimplemmented')")
+    }
+}
+
+#[axum::async_trait]
+impl<S> FromRequestParts<S> for Context {
+    type Rejection = Infallible;
+
+    async fn from_request_parts(_parts: &mut Parts, _state: &S) -> Result<Self, Self::Rejection> {
+        Ok(Context::new())
+    }
+}
+
+pub struct Response {
+    content: String,
+}
+
+impl IntoResponse for Response {
+    fn into_response(self) -> axum::response::Response {
+        Html(self.content).into_response()
+    }
+}
+
+pub fn live<H, T, S>(handler: H) -> MethodRouter<S>
+where
+    H: Handler<T, S>,
+    T: 'static,
+    S: Clone + Send + Sync + 'static,
+{
+    get(
+        |axum::extract::State(state): axum::extract::State<S>, request: Request| {
+            let is_websocket = request
+                .headers()
+                .get("Upgrade")
+                .and_then(|v| v.to_str().ok())
+                == Some("websocket");
+
+            async move {
+                if !is_websocket {
+                    let mut response = handler.call(request, state).await;
+
+                    // this returns a barebone html with the websocket connection thing
+                    *response.body_mut() = Body::from(include_str!("base.html"));
+                    return response;
+                }
+
+                let (mut parts, body) = request.into_parts();
+                let ws = WebSocketUpgrade::from_request_parts(&mut parts, &state)
+                    .await
+                    .unwrap();
+                let request = Request::from_parts(parts, body);
+
+                let response = handler.call(request, state).await;
+
+                let body = to_bytes(response.into_body(), 100_000_000)
+                    .await
+                    .unwrap()
+                    .to_vec();
+
+                ws.on_upgrade(|mut socket: WebSocket| async move {
+                    if let Some(Ok(_)) = socket.recv().await {
+                        // TODO we could do streaming here
+                        let msg = axum::extract::ws::Message::Binary(body);
+
+                        if socket.send(msg).await.is_err() {
+                            // client disconnected
+                            return;
+                        }
+                    }
+
+                    // todo runs the handler and like. prepares a Thing that can deal with the things
+                    while let Some(msg) = socket.recv().await {
+                        let msg = if let Ok(msg) = msg {
+                            msg
+                        } else {
+                            // client disconnected
+                            return;
+                        };
+
+                        if socket.send(msg).await.is_err() {
+                            // client disconnected
+                            return;
+                        }
+                    }
+                })
+                .into_response()
+            }
+        },
+    )
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_basic() {
+        let el = div(p("hello") + p("world"));
+
+        assert_eq!(el.content, "<div><p>hello</p><p>world</p></div>");
+    }
+
+    #[test]
+    fn test_attributes() {
+        let el = div(("hello", vec![("hi".to_string(), "test".to_string())]));
+
+        assert_eq!(el.content, "<div hi=\"test\">hello</div>");
+    }
+
+    #[test]
+    fn test_attributes_macro() {
+        let el = div(("hello", attrs![("hi", "test")]));
+
+        assert_eq!(el.content, "<div hi=\"test\">hello</div>");
+    }
+
+    #[test]
+    fn test_state() {
+        let mut ctx = Context::new();
+
+        let s = ctx.use_state(0u32);
+
+        let el = div(s);
+
+        assert_eq!(el.content, "<div hi=\"test\">hello</div>");
+    }
+}
