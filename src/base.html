@@ -1,18 +1,10 @@
-<!DOCTYPE html>
-<html>
-    <head>
-    </head>
-    <body>
-        <div id="app">Loading...</div>
-        <script>
-            document.addEventListener("DOMContentLoaded", (event) => {
-                const conn = new WebSocket(window.location);
-                conn.onopen = function () {
-                    console.log('Connected.');
-                    conn.send('beep');
-                };
-                conn.onmessage = async (e) => window.app.innerHTML = await e.data.text();
-            });
-        </script>
-    </body>
-</html>
+<script>
+    document.addEventListener("DOMContentLoaded", (event) => {
+        const conn = new WebSocket(window.location);
+        conn.onopen = function () {
+            console.log('Connected.');
+            conn.send('beep');
+        };
+        conn.onmessage = async (e) => window.app.innerHTML = await e.data.text();
+    });
+</script>

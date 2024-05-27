@@ -5,8 +5,13 @@ use axum::{
     http::request::Parts,
     response::{Html, IntoResponse},
     routing::{get, MethodRouter},
+    Extension,
 };
-use std::{convert::Infallible, fmt::Display, ops::Add};
+use std::{
+    convert::Infallible,
+    fmt::Display,
+    ops::{Add, Deref},
+};
 
 #[derive(Default)]
 pub struct Element {
@@ -147,6 +152,15 @@ macro_rules! make_element {
 make_element!(div);
 make_element!(p);
 make_element!(button);
+make_element!(html);
+make_element!(body);
+make_element!(head);
+
+pub fn slot() -> Element {
+    Element {
+        content: "{^slot^}".to_string(),
+    }
+}
 
 pub struct Context {
     uuid: String,
@@ -178,7 +192,7 @@ impl Context {
         // TODO add something to connect via web-socket
 
         Response {
-            content: element.content,
+            content: div((element, attrs!(("id", "app")))).content,
         }
     }
 }
@@ -187,12 +201,27 @@ pub struct State<T> {
     value: T,
     id: String,
 }
+
+// TODO we can do something live bevy's change detection with the DerefMut
+// https://docs.rs/bevy_ecs/0.13.2/src/bevy_ecs/change_detection.rs.html#485
+impl<T> Deref for State<T> {
+    type Target = T;
+
+    fn deref(&self) -> &Self::Target {
+        &self.value
+    }
+}
+
 impl<T> State<T> {
     pub fn get(&self) -> &T {
         &self.value
     }
 
     pub fn set(&self, value: T) {
+        // TODO so uhh how do we send a message about the update here?
+        // one option we have is to set the value on the use_state,
+        // and then rerun the function from scratch
+        // idk tho
         todo!()
     }
 }
@@ -223,6 +252,19 @@ impl IntoResponse for Response {
     }
 }
 
+#[derive(Clone)]
+pub struct Coaxial {
+    layout: String,
+}
+
+impl Coaxial {
+    pub fn with_layout(layout: Element) -> Extension<Self> {
+        let mut layout = layout.content;
+        layout.push_str(include_str!("base.html"));
+        Extension(Coaxial { layout })
+    }
+}
+
 pub fn live<H, T, S>(handler: H) -> MethodRouter<S>
 where
     H: Handler<T, S>,
@@ -230,7 +272,9 @@ where
     S: Clone + Send + Sync + 'static,
 {
     get(
-        |axum::extract::State(state): axum::extract::State<S>, request: Request| {
+        |axum::extract::State(state): axum::extract::State<S>,
+         Extension(config): Extension<Coaxial>,
+         request: Request| {
             let is_websocket = request
                 .headers()
                 .get("Upgrade")
@@ -239,11 +283,16 @@ where
 
             async move {
                 if !is_websocket {
-                    let mut response = handler.call(request, state).await;
+                    let response = handler.call(request, state).await;
 
-                    // this returns a barebone html with the websocket connection thing
-                    *response.body_mut() = Body::from(include_str!("base.html"));
-                    return response;
+                    let (parts, body) = response.into_parts();
+
+                    let body =
+                        String::from_utf8(to_bytes(body, 100_000_000).await.unwrap().to_vec())
+                            .unwrap();
+                    let output = config.layout.clone().replace("{^slot^}", &body);
+
+                    return axum::response::Response::from_parts(parts, Body::from(output));
                 }
 
                 let (mut parts, body) = request.into_parts();
