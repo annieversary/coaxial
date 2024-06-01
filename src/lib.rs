@@ -8,9 +8,12 @@ use axum::{
     Extension,
 };
 use std::{
+    collections::HashMap,
     convert::Infallible,
     fmt::Display,
+    future::Future,
     ops::{Add, Deref},
+    pin::Pin,
 };
 
 #[derive(Default)]
@@ -162,35 +165,51 @@ pub fn slot() -> Element {
     }
 }
 
-pub struct Context {
-    uuid: String,
-    index: u64,
+pub trait Stated {
+    type State;
+
+    fn to_state(&self) -> Self::State;
 }
 
-impl Context {
+type AsyncClosure<'a, D> = Box<dyn Fn(&'a mut D) -> Pin<Box<dyn Future<Output = ()> + 'a>>>;
+
+pub struct Context<'a, D: Default + Stated> {
+    uuid: String,
+    index: u64,
+    closures: HashMap<String, AsyncClosure<'a, D>>,
+}
+
+impl<'a, D: Default + Stated> Context<'a, D> {
     pub fn new() -> Self {
+        let data: D = Default::default();
         Self {
             uuid: "hi".to_string(),
             index: 0,
+            closures: Default::default(),
+
+            state: data.to_state(),
+            data,
         }
     }
 
-    pub fn use_state<T>(&mut self, value: T) -> State<T> {
+    pub fn use_closure<F, Fut>(&'a mut self, closure: F) -> Closure
+    where
+        D: 'a,
+        F: Fn(&'a mut D) -> Fut + 'static,
+        Fut: Future<Output = ()> + Send + 'a,
+    {
         self.index += 1;
-        State {
-            value,
-            id: format!("{}-{}", self.uuid, self.index),
-        }
-    }
+        let id = format!("{}-{}", self.uuid, self.index);
+        self.closures.insert(
+            id.clone(),
+            Box::new(move |d| Box::pin(closure(d)) as Pin<Box<dyn Future<Output = ()> + 'a>>)
+                as AsyncClosure<D>,
+        );
 
-    pub fn use_closure<F>(&mut self, closure: F) -> Closure {
-        // TODO
-        Closure {}
+        Closure { id }
     }
 
     pub fn with(self, element: Element) -> Response {
-        // TODO add something to connect via web-socket
-
         Response {
             content: div((element, attrs!(("id", "app")))).content,
         }
@@ -213,6 +232,10 @@ impl<T> Deref for State<T> {
 }
 
 impl<T> State<T> {
+    pub fn new(value: T, id: String) -> Self {
+        Self { value, id }
+    }
+
     pub fn get(&self) -> &T {
         &self.value
     }
@@ -226,7 +249,9 @@ impl<T> State<T> {
     }
 }
 
-pub struct Closure {}
+pub struct Closure {
+    id: String,
+}
 impl Display for Closure {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "alert('unimplemmented')")
@@ -234,7 +259,7 @@ impl Display for Closure {
 }
 
 #[axum::async_trait]
-impl<S> FromRequestParts<S> for Context {
+impl<'a, S, D: Default + Stated> FromRequestParts<S> for Context<'a, D> {
     type Rejection = Infallible;
 
     async fn from_request_parts(_parts: &mut Parts, _state: &S) -> Result<Self, Self::Rejection> {
@@ -365,14 +390,14 @@ mod tests {
         assert_eq!(el.content, "<div hi=\"test\">hello</div>");
     }
 
-    #[test]
-    fn test_state() {
-        let mut ctx = Context::new();
+    // #[test]
+    // fn test_state() {
+    //     let mut ctx = Context::new();
 
-        let s = ctx.use_state(0u32);
+    //     let s = ctx.use_state(0u32);
 
-        let el = div(s);
+    //     let el = div(s);
 
-        assert_eq!(el.content, "<div hi=\"test\">hello</div>");
-    }
+    //     assert_eq!(el.content, "<div hi=\"test\">hello</div>");
+    // }
 }
