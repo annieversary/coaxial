@@ -1,10 +1,36 @@
 <script>
+    class Coaxial {
+        constructor() {
+            this.conn = new WebSocket(window.location);
+            this.conn.onopen = () => {
+                console.log('Connected.');
+                /* this.send({t: 'init'}); */
+            };
+            this.conn.onmessage = async (e) => {
+                // TODO repalce whatever has changed
+                const msg = JSON.parse(e.data);
+                console.log(msg);
+
+                if (msg.t === 'update') {
+                    for (const [field, value] of msg.fields) {
+                        document.querySelectorAll(`[data-coaxial-id="${field}"]`).forEach(el => {
+                            el.innerHTML = value;
+                        });
+                    }
+                }
+            };
+        }
+
+        callClosure(closure) {
+            this.send({ t: 'closure', closure });
+        }
+
+        send(body) {
+            this.conn.send(JSON.stringify(body));
+        }
+    }
+
     document.addEventListener("DOMContentLoaded", (event) => {
-        const conn = new WebSocket(window.location);
-        conn.onopen = function () {
-            console.log('Connected.');
-            conn.send('beep');
-        };
-        conn.onmessage = async (e) => window.app.innerHTML = await e.data.text();
+        window.Coaxial = new Coaxial();
     });
 </script>

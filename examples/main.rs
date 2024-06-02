@@ -1,5 +1,7 @@
-use axum::{response::IntoResponse, Router};
-use coaxial::{attrs, body, button, div, head, html, live, p, slot, Coaxial, Context};
+use axum::Router;
+use coaxial::{
+    attrs, body, button, div, head, html, live, p, slot, Coaxial, CoaxialResponse, Context,
+};
 
 #[tokio::main]
 async fn main() {
@@ -13,11 +15,11 @@ async fn main() {
     axum::serve(listener, app).await.unwrap();
 }
 
-async fn counter(mut ctx: Context) -> impl IntoResponse {
+async fn counter(mut ctx: Context) -> CoaxialResponse {
     let counter = ctx.use_state(0u32);
 
-    let add = ctx.use_closure(|| async { counter.set(counter.get() + 1) });
-    let sub = ctx.use_closure(|| async { counter.set(counter.get() - 1) });
+    let add = ctx.use_closure(move || async { todo!() });
+    let sub = ctx.use_closure(move || async { todo!() });
 
     ctx.with(div(p(counter)
         + button(("+", attrs!(("onclick", add))))
