@@ -372,13 +372,13 @@ where
                             }
                         };
 
-                        // TODO run closure
                         match msg {
                             SocketMessage::Closure { closure } => {
                                 let Some(closure) = context.closures.get(&closure) else {
                                     continue;
                                 };
-                                pool.spawn_pinned(|| closure.call()).await.unwrap();
+                                let closure = closure.clone();
+                                pool.spawn_pinned(move || closure.call()).await.unwrap();
                             }
                         }
 

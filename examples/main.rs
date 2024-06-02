@@ -18,7 +18,7 @@ async fn main() {
 async fn counter(mut ctx: Context) -> CoaxialResponse {
     let counter = ctx.use_state(0u32);
 
-    let add = ctx.use_closure(move || async { todo!() });
+    let add = ctx.use_closure(move || async { println!("hi") });
     let sub = ctx.use_closure(move || async { todo!() });
 
     ctx.with(div(p(counter)
