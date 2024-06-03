@@ -1,25 +1,15 @@
 use axum::{
-    body::{to_bytes, Body},
+    body::Body,
     extract::{
         ws::{Message, WebSocket},
         FromRequestParts, Request, WebSocketUpgrade,
     },
-    handler::Handler,
-    http::request::Parts,
-    response::{Html, IntoResponse, Response},
+    response::{IntoResponse, Response},
     routing::{get, MethodRouter},
     Extension,
 };
-use std::{
-    collections::HashMap,
-    convert::Infallible,
-    fmt::Display,
-    future::Future,
-    marker::PhantomData,
-    ops::{Add, Deref},
-    pin::Pin,
-    sync::Arc,
-};
+use generational_box::{AnyStorage, GenerationalBox, Owner, SyncStorage};
+use std::{collections::HashMap, fmt::Display, future::Future, ops::Add, pin::Pin, sync::Arc};
 use tokio_util::task::LocalPoolHandle;
 
 #[derive(Default)]
@@ -71,12 +61,13 @@ impl From<&'static str> for Element {
         }
     }
 }
-impl<T: Display> From<State<T>> for Element {
+impl<T: Display + Clone + Send + Sync> From<State<T>> for Element {
     fn from(value: State<T>) -> Self {
         Element {
             content: format!(
                 "<span data-coaxial-id=\"{}\">{}</span>",
-                value.id, value.value
+                value.id,
+                value.get()
             ),
         }
     }
@@ -103,7 +94,7 @@ impl From<Element> for ElementParams {
         }
     }
 }
-impl<T: Display> From<State<T>> for ElementParams {
+impl<T: Display + Clone + Send + Sync> From<State<T>> for ElementParams {
     fn from(state: State<T>) -> Self {
         ElementParams {
             children: state.into(),
@@ -186,8 +177,10 @@ where
 }
 
 pub struct Context {
-    uuid: String,
+    uuid: u64,
     index: u64,
+
+    state_owner: Owner<SyncStorage>,
     closures: HashMap<String, Arc<dyn AsyncFn>>,
 }
 
@@ -195,8 +188,9 @@ impl Context {
     pub fn new() -> Self {
         Self {
             // TODO generate something random
-            uuid: "hi".to_string(),
+            uuid: 100000,
             index: 0,
+            state_owner: <SyncStorage as AnyStorage>::owner(),
             closures: Default::default(),
         }
     }
@@ -213,11 +207,11 @@ impl Context {
         Closure { id }
     }
 
-    pub fn use_state<T>(&mut self, value: T) -> State<T> {
+    pub fn use_state<T: Send + Sync>(&mut self, value: T) -> State<T> {
         self.index += 1;
         State {
-            value,
-            id: format!("{}-{}", self.uuid, self.index),
+            inner: self.state_owner.insert(value),
+            id: self.index + self.uuid,
         }
     }
 
@@ -229,36 +223,18 @@ impl Context {
     }
 }
 
-pub struct State<T> {
-    value: T,
-    id: String,
+#[derive(Clone, Copy)]
+pub struct State<T: 'static> {
+    inner: GenerationalBox<T, SyncStorage>,
+    id: u64,
 }
 
-// TODO we can do something live bevy's change detection with the DerefMut
-// https://docs.rs/bevy_ecs/0.13.2/src/bevy_ecs/change_detection.rs.html#485
-impl<T> Deref for State<T> {
-    type Target = T;
-
-    fn deref(&self) -> &Self::Target {
-        &self.value
+impl<T: Clone + Send + Sync + 'static> State<T> {
+    pub fn get(&self) -> T {
+        self.inner.read().clone()
     }
-}
-
-impl<T> State<T> {
-    pub fn new(value: T, id: String) -> Self {
-        Self { value, id }
-    }
-
-    pub fn get(&self) -> &T {
-        &self.value
-    }
-
     pub fn set(&self, value: T) {
-        // TODO so uhh how do we send a message about the update here?
-        // one option we have is to set the value on the use_state,
-        // and then rerun the function from scratch
-        // idk tho
-        todo!()
+        self.inner.set(value);
     }
 }
 
@@ -290,12 +266,13 @@ impl Coaxial {
     }
 }
 
+// TODO implement handler for everything else
 pub trait CoaxialHandler<S>: Clone + Send + Sized + 'static {
     type Future: Future<Output = CoaxialResponse> + Send + 'static;
     fn call(self, req: Request, state: S) -> Self::Future;
 }
 
-// TODO implement handler for the basic func that takes only the context
+// implement handler for the basic func that takes only the context
 impl<F, Fut, S> CoaxialHandler<S> for F
 where
     F: FnOnce(Context) -> Fut + Clone + Send + 'static,
@@ -382,8 +359,10 @@ where
                             }
                         }
 
+                        // TODO if something changed, send a message with the update
+
                         let msg = axum::extract::ws::Message::Text(
-                            "{ \"t\": \"update\", \"fields\": [[\"hi-1\", 1]] }".to_string(),
+                            "{ \"t\": \"update\", \"fields\": [[100001, 1]] }".to_string(),
                         );
                         if socket.send(msg).await.is_err() {
                             // client disconnected

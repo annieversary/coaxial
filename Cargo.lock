@@ -175,6 +175,7 @@ name = "coaxial"
 version = "0.1.0"
 dependencies = [
  "axum",
+ "generational-box",
  "serde",
  "serde_json",
  "tokio",
@@ -282,6 +283,15 @@ dependencies = [
  "pin-project-lite",
  "pin-utils",
  "slab",
+]
+
+[[package]]
+name = "generational-box"
+version = "0.5.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "f132919c96b85c02a067ceae965fd50ace57111e2f55c7384b95ac191f4d966b"
+dependencies = [
+ "parking_lot",
 ]
 
 [[package]]
