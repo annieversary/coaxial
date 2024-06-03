@@ -10,6 +10,7 @@ use axum::{
 };
 use generational_box::{AnyStorage, GenerationalBox, Owner, SyncStorage};
 use std::{collections::HashMap, fmt::Display, future::Future, ops::Add, pin::Pin, sync::Arc};
+use tokio::sync::mpsc::{unbounded_channel, UnboundedReceiver, UnboundedSender};
 use tokio_util::task::LocalPoolHandle;
 
 #[derive(Default)]
@@ -182,16 +183,24 @@ pub struct Context {
 
     state_owner: Owner<SyncStorage>,
     closures: HashMap<String, Arc<dyn AsyncFn>>,
+
+    changes_rx: UnboundedReceiver<(u64, String)>,
+    changes_tx: UnboundedSender<(u64, String)>,
 }
 
 impl Context {
     pub fn new() -> Self {
+        let (changes_tx, changes_rx) = unbounded_channel();
+
         Self {
             // TODO generate something random
             uuid: 100000,
             index: 0,
             state_owner: <SyncStorage as AnyStorage>::owner(),
             closures: Default::default(),
+
+            changes_rx,
+            changes_tx,
         }
     }
 
@@ -210,7 +219,11 @@ impl Context {
     pub fn use_state<T: Send + Sync>(&mut self, value: T) -> State<T> {
         self.index += 1;
         State {
-            inner: self.state_owner.insert(value),
+            // TODO we might wanna insert_with_caller instead?
+            inner: self.state_owner.insert(StateInner {
+                value,
+                changes_tx: self.changes_tx.clone(),
+            }),
             id: self.index + self.uuid,
         }
     }
@@ -225,16 +238,25 @@ impl Context {
 
 #[derive(Clone, Copy)]
 pub struct State<T: 'static> {
-    inner: GenerationalBox<T, SyncStorage>,
+    inner: GenerationalBox<StateInner<T>, SyncStorage>,
     id: u64,
 }
 
-impl<T: Clone + Send + Sync + 'static> State<T> {
+struct StateInner<T: 'static> {
+    value: T,
+    changes_tx: UnboundedSender<(u64, String)>,
+}
+
+impl<T: Clone + Display + Send + Sync + 'static> State<T> {
     pub fn get(&self) -> T {
-        self.inner.read().clone()
+        self.inner.read().value.clone()
     }
+
     pub fn set(&self, value: T) {
-        self.inner.set(value);
+        let mut w = self.inner.write();
+        w.changes_tx.send((self.id, format!("{value}"))).unwrap();
+        w.value = value;
+        println!("updated");
     }
 }
 
@@ -321,7 +343,7 @@ where
                     .unwrap();
                 let request = Request::from_parts(parts, body);
 
-                let response = handler.call(request, state).await;
+                let mut response = handler.call(request, state).await;
 
                 ws.on_upgrade(|mut socket: WebSocket| async move {
                     // if let Some(Ok(_)) = socket.recv().await {
@@ -334,11 +356,11 @@ where
                     //     }
                     // }
 
-                    let context = &response.body().context;
+                    let context = &mut response.body_mut().context;
                     let pool = LocalPoolHandle::new(5);
 
                     while let Some(msg) = socket.recv().await {
-                        let msg: SocketMessage = match msg {
+                        let msg: InMessage = match msg {
                             Ok(Message::Text(msg)) => serde_json::from_str(&msg).unwrap(),
                             Ok(_) => {
                                 continue;
@@ -350,23 +372,40 @@ where
                         };
 
                         match msg {
-                            SocketMessage::Closure { closure } => {
+                            InMessage::Closure { closure } => {
+                                println!("receiving");
+                                // flush the changes channel
+                                context
+                                    .changes_rx
+                                    .recv_many(&mut Vec::new(), context.changes_rx.len())
+                                    .await;
+                                println!("received");
+
                                 let Some(closure) = context.closures.get(&closure) else {
                                     continue;
                                 };
+                                println!("running");
+
                                 let closure = closure.clone();
                                 pool.spawn_pinned(move || closure.call()).await.unwrap();
+
+                                println!("finished running");
+
+                                // TODO if something changed, send a message with the update
+                                let mut fields = Vec::new();
+                                context.changes_rx.recv_many(&mut fields, 10000).await;
+
+                                dbg!(&fields);
+
+                                let out = OutMessage::Update { fields };
+                                let msg = axum::extract::ws::Message::Text(
+                                    serde_json::to_string(&out).unwrap(),
+                                );
+                                if socket.send(msg).await.is_err() {
+                                    // client disconnected
+                                    return;
+                                }
                             }
-                        }
-
-                        // TODO if something changed, send a message with the update
-
-                        let msg = axum::extract::ws::Message::Text(
-                            "{ \"t\": \"update\", \"fields\": [[100001, 1]] }".to_string(),
-                        );
-                        if socket.send(msg).await.is_err() {
-                            // client disconnected
-                            return;
                         }
                     }
                 })
@@ -378,8 +417,13 @@ where
 
 #[derive(serde::Deserialize)]
 #[serde(tag = "t")]
-enum SocketMessage {
+enum InMessage {
     Closure { closure: String },
+}
+#[derive(serde::Serialize)]
+#[serde(tag = "t")]
+enum OutMessage {
+    Update { fields: Vec<(u64, String)> },
 }
 
 #[cfg(test)]
