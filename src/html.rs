@@ -131,33 +131,30 @@ impl Add<Self> for Element {
 }
 
 macro_rules! make_element {
-    ($ident:ident) => {
-        pub fn $ident(params: impl Into<ElementParams>) -> Element {
-            let ElementParams {
-                mut children,
-                attributes,
-            } = params.into();
+    ($( $ident:ident ),* $(,)?) => {
+        $(
+            pub fn $ident(params: impl Into<ElementParams>) -> Element {
+                let ElementParams {
+                    mut children,
+                    attributes,
+                } = params.into();
 
-            let attributes = attributes.to_string();
+                let attributes = attributes.to_string();
 
-            children.content = format!(
-                "<{}{attributes}>{}</{}>",
-                stringify!($ident),
-                children.content,
-                stringify!($ident)
-            );
+                children.content = format!(
+                    "<{}{attributes}>{}</{}>",
+                    stringify!($ident),
+                    children.content,
+                    stringify!($ident)
+                );
 
-            children
-        }
+                children
+            }
+        )*
     };
 }
 
-make_element!(div);
-make_element!(p);
-make_element!(button);
-make_element!(html);
-make_element!(body);
-make_element!(head);
+make_element!(html, body, head, div, p, button, a, section, aside, main, b);
 
 pub fn slot() -> Element {
     Element {
