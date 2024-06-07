@@ -7,9 +7,7 @@
                 /* this.send({t: 'init'}); */
             };
             this.conn.onmessage = async (e) => {
-                // TODO repalce whatever has changed
                 const msg = JSON.parse(e.data);
-                console.log(msg);
 
                 if (msg.t === 'Update') {
                     for (const [field, value] of msg.fields) {
@@ -25,12 +23,19 @@
             this.send({ t: 'Closure', closure });
         }
 
+        onEvent(name, params) {
+            // TODO why the fuck are the params not working correctly if i dont do this
+            params = { clientX: params.clientX, clientY: params.clientY };
+            this.send({ t: 'Event', name, params });
+        }
+
         send(body) {
             this.conn.send(JSON.stringify(body));
         }
     }
 
-    document.addEventListener("DOMContentLoaded", (event) => {
+    document.addEventListener("DOMContentLoaded", event => {
         window.Coaxial = new Coaxial();
     });
+
 </script>

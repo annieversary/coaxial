@@ -38,10 +38,25 @@ where
 
                     let (parts, body) = response.into_parts();
 
-                    let output = config
+                    let mut output = config
                         .layout
                         .clone()
+                        // TODO this is bad
                         .replace("{^slot^}", &body.element.content);
+
+                    // add listeners for the registered event handlers
+                    let events = body.context.event_handlers.keys();
+                    if events.len() != 0 {
+                        output.push_str("<script>");
+                        for event in events {
+                            output.push_str(&format!(
+                                "document.addEventListener('{event}', params => {{
+        if (window.Coaxial) window.Coaxial.onEvent('{event}', params);
+    }});"
+                            ));
+                        }
+                        output.push_str("</script>");
+                    }
 
                     return axum::response::Response::from_parts(parts, Body::from(output));
                 }
@@ -70,8 +85,9 @@ where
 
                                 let res = handle_socket_message(
                                     msg.map_err(|_| ()),
-                                    &context.closures,
                                     &pool,
+                                    &context.closures,
+                                    &context.event_handlers,
                                 )
                                     .await;
 
@@ -96,7 +112,8 @@ where
     )
 }
 
-type Closures = std::collections::HashMap<String, Arc<dyn AsyncFn>>;
+type Closures = std::collections::HashMap<String, Arc<dyn AsyncFn<()>>>;
+type EventHandlers = std::collections::HashMap<String, Arc<dyn AsyncFn<(serde_json::Value,)>>>;
 
 enum SocketError {
     Fatal,
@@ -105,8 +122,9 @@ enum SocketError {
 
 async fn handle_socket_message(
     msg: Result<Message, ()>,
-    closures: &Closures,
     pool: &LocalPoolHandle,
+    closures: &Closures,
+    events: &EventHandlers,
 ) -> Result<(), SocketError> {
     let msg: InMessage = match msg {
         Ok(Message::Text(msg)) => serde_json::from_str(&msg).unwrap(),
@@ -126,7 +144,17 @@ async fn handle_socket_message(
             };
 
             let closure = closure.clone();
-            pool.spawn_pinned(move || closure.call()).await.unwrap();
+            pool.spawn_pinned(move || closure.call(())).await.unwrap();
+        }
+        InMessage::Event { name, params } => {
+            let Some(event) = events.get(&name) else {
+                return Err(SocketError::Fatal);
+            };
+
+            let event = event.clone();
+            pool.spawn_pinned(move || event.call((params,)))
+                .await
+                .unwrap();
         }
     }
 
@@ -136,7 +164,13 @@ async fn handle_socket_message(
 #[derive(serde::Deserialize)]
 #[serde(tag = "t")]
 enum InMessage {
-    Closure { closure: String },
+    Closure {
+        closure: String,
+    },
+    Event {
+        name: String,
+        params: serde_json::Value,
+    },
 }
 #[derive(serde::Serialize)]
 #[serde(tag = "t")]

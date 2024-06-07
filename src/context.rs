@@ -15,7 +15,10 @@ pub struct Context {
     index: u64,
 
     state_owner: Owner<SyncStorage>,
-    pub(crate) closures: HashMap<String, Arc<dyn AsyncFn>>,
+    pub(crate) closures: HashMap<String, Arc<dyn AsyncFn<()>>>,
+    // TODO idk how to erase the param type
+    // maybe we just do serde_json::Value directly
+    pub(crate) event_handlers: HashMap<String, Arc<dyn AsyncFn<(serde_json::Value,)>>>,
 
     pub(crate) changes_rx: UnboundedReceiver<(u64, String)>,
     changes_tx: UnboundedSender<(u64, String)>,
@@ -50,6 +53,15 @@ impl Context {
         }
     }
 
+    pub fn on<F, Fut>(&mut self, name: impl ToString, closure: F)
+    where
+        F: Fn(serde_json::Value) -> Fut + Send + Sync + 'static,
+        Fut: Future<Output = ()> + Send + 'static,
+    {
+        self.event_handlers
+            .insert(name.to_string(), Arc::new(closure));
+    }
+
     pub fn with(self, element: Element) -> CoaxialResponse {
         Response::new(Output {
             element,
@@ -68,6 +80,7 @@ impl Default for Context {
             index: 0,
             state_owner: <SyncStorage as AnyStorage>::owner(),
             closures: Default::default(),
+            event_handlers: Default::default(),
 
             changes_rx,
             changes_tx,
