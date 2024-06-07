@@ -19,7 +19,7 @@ where
     type Future = Pin<Box<dyn Future<Output = CoaxialResponse> + Send>>;
 
     fn call(self, _req: Request, _state: S) -> Self::Future {
-        Box::pin(async move { self(Context::new()).await })
+        Box::pin(async move { self(Context::default()).await })
     }
 }
 impl<F, Fut, S, T> CoaxialHandler<((T,),), S> for F
@@ -41,7 +41,7 @@ where
                 Err(_rejection) => panic!("rejection"),
             };
 
-            self(Context::new(), t).await
+            self(Context::default(), t).await
         })
     }
 }

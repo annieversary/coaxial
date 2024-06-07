@@ -189,15 +189,4 @@ mod tests {
 
         assert_eq!(el.content, "<div hi=\"test\">hello</div>");
     }
-
-    // #[test]
-    // fn test_state() {
-    //     let mut ctx = Context::new();
-
-    //     let s = ctx.use_state(0u32);
-
-    //     let el = div(s);
-
-    //     assert_eq!(el.content, "<div hi=\"test\">hello</div>");
-    // }
 }

@@ -22,21 +22,6 @@ pub struct Context {
 }
 
 impl Context {
-    pub fn new() -> Self {
-        let (changes_tx, changes_rx) = unbounded_channel();
-
-        Self {
-            // TODO generate something random
-            uuid: 100000,
-            index: 0,
-            state_owner: <SyncStorage as AnyStorage>::owner(),
-            closures: Default::default(),
-
-            changes_rx,
-            changes_tx,
-        }
-    }
-
     pub fn use_closure<F, Fut>(&mut self, closure: F) -> Closure
     where
         F: Fn() -> Fut + Send + Sync + 'static,
@@ -66,5 +51,22 @@ impl Context {
             element,
             context: self,
         })
+    }
+}
+
+impl Default for Context {
+    fn default() -> Self {
+        let (changes_tx, changes_rx) = unbounded_channel();
+
+        Self {
+            // TODO generate something random
+            uuid: 100000,
+            index: 0,
+            state_owner: <SyncStorage as AnyStorage>::owner(),
+            closures: Default::default(),
+
+            changes_rx,
+            changes_tx,
+        }
     }
 }
