@@ -34,14 +34,18 @@ impl Context {
         Closure { id }
     }
 
+    #[track_caller]
     pub fn use_state<T: Send + Sync>(&mut self, value: T) -> State<T> {
         self.index += 1;
         State {
-            // TODO we might wanna insert_with_caller instead?
-            inner: self.state_owner.insert(StateInner {
-                value,
-                changes_tx: self.changes_tx.clone(),
-            }),
+            inner: self.state_owner.insert_with_caller(
+                StateInner {
+                    value,
+                    changes_tx: self.changes_tx.clone(),
+                },
+                #[cfg(any(debug_assertions, feature = "debug_ownership"))]
+                std::panic::Location::caller(),
+            ),
             id: self.index + self.uuid,
         }
     }
