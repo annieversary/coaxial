@@ -1,7 +1,12 @@
 use std::sync::{atomic::AtomicI64, Arc};
 
 use axum::{extract::State, Router};
-use coaxial::{body, button, div, head, html, live, p, slot, Coaxial, CoaxialResponse, Context};
+use coaxial::{
+    context::Context,
+    html::{body, button, div, head, html, p, slot},
+    live::live,
+    Coaxial, CoaxialResponse,
+};
 use tokio::sync::broadcast::{self, Sender};
 
 struct AppState {
