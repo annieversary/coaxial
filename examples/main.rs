@@ -1,7 +1,5 @@
 use axum::Router;
-use coaxial::{
-    attrs, body, button, div, head, html, live, p, slot, Coaxial, CoaxialResponse, Context,
-};
+use coaxial::{body, button, div, head, html, live, p, slot, Coaxial, CoaxialResponse, Context};
 
 #[tokio::main]
 async fn main() {
@@ -26,6 +24,6 @@ async fn counter(mut ctx: Context) -> CoaxialResponse {
     });
 
     ctx.with(div(p(counter)
-        + button(("+", attrs!(("onclick", add))))
-        + button(("-", attrs!(("onclick", sub))))))
+        + button(("+", ("onclick", add)))
+        + button(("-", ("onclick", sub)))))
 }

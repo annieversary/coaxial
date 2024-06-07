@@ -104,6 +104,13 @@ impl<T: Display + Clone + Send + Sync> From<State<T>> for ElementParams {
     }
 }
 
+impl<A: ToString, B: ToString> From<(A, B)> for Attributes {
+    fn from((a, b): (A, B)) -> Self {
+        Self {
+            list: vec![(a.to_string(), b.to_string())],
+        }
+    }
+}
 impl From<Vec<(String, String)>> for Attributes {
     fn from(list: Vec<(String, String)>) -> Self {
         Self { list }
@@ -256,7 +263,6 @@ impl<T: Clone + Display + Send + Sync + 'static> State<T> {
         let mut w = self.inner.write();
         w.changes_tx.send((self.id, format!("{value}"))).unwrap();
         w.value = value;
-        println!("updated");
     }
 }
 
@@ -289,13 +295,13 @@ impl Coaxial {
 }
 
 // TODO implement handler for everything else
-pub trait CoaxialHandler<S>: Clone + Send + Sized + 'static {
+pub trait CoaxialHandler<T, S>: Clone + Send + Sized + 'static {
     type Future: Future<Output = CoaxialResponse> + Send + 'static;
     fn call(self, req: Request, state: S) -> Self::Future;
 }
 
 // implement handler for the basic func that takes only the context
-impl<F, Fut, S> CoaxialHandler<S> for F
+impl<F, Fut, S> CoaxialHandler<((),), S> for F
 where
     F: FnOnce(Context) -> Fut + Clone + Send + 'static,
     Fut: Future<Output = CoaxialResponse> + Send,
@@ -307,10 +313,33 @@ where
         Box::pin(async move { self(Context::new()).await })
     }
 }
-
-pub fn live<H, S>(handler: H) -> MethodRouter<S>
+impl<F, Fut, S, T> CoaxialHandler<((T,),), S> for F
 where
-    H: CoaxialHandler<S>,
+    F: FnOnce(Context, T) -> Fut + Clone + Send + 'static,
+    Fut: Future<Output = CoaxialResponse> + Send,
+    S: Send + Sync + 'static,
+    T: FromRequestParts<S>, // TODO we can add an IntoCoaxialResponse here
+{
+    type Future = Pin<Box<dyn Future<Output = CoaxialResponse> + Send>>;
+
+    fn call(self, req: Request, state: S) -> Self::Future {
+        Box::pin(async move {
+            let (mut parts, _body) = req.into_parts();
+            let state = &state;
+
+            let t = match T::from_request_parts(&mut parts, state).await {
+                Ok(value) => value,
+                Err(_rejection) => panic!("rejection"),
+            };
+
+            self(Context::new(), t).await
+        })
+    }
+}
+
+pub fn live<T, H, S>(handler: H) -> MethodRouter<S>
+where
+    H: CoaxialHandler<T, S>,
     S: Clone + Send + Sync + 'static,
 {
     get(
@@ -359,6 +388,9 @@ where
                     let context = &mut response.body_mut().context;
                     let pool = LocalPoolHandle::new(5);
 
+                    // TODO we are only sending messages back when a closure is run
+                    // TODO we should probably separate listening to socket messages
+                    // and sending messages back down when things change
                     while let Some(msg) = socket.recv().await {
                         let msg: InMessage = match msg {
                             Ok(Message::Text(msg)) => serde_json::from_str(&msg).unwrap(),
@@ -373,29 +405,22 @@ where
 
                         match msg {
                             InMessage::Closure { closure } => {
-                                println!("receiving");
                                 // flush the changes channel
                                 context
                                     .changes_rx
                                     .recv_many(&mut Vec::new(), context.changes_rx.len())
                                     .await;
-                                println!("received");
 
                                 let Some(closure) = context.closures.get(&closure) else {
                                     continue;
                                 };
-                                println!("running");
 
                                 let closure = closure.clone();
                                 pool.spawn_pinned(move || closure.call()).await.unwrap();
 
-                                println!("finished running");
-
-                                // TODO if something changed, send a message with the update
+                                // if something changed, send a message with the update
                                 let mut fields = Vec::new();
                                 context.changes_rx.recv_many(&mut fields, 10000).await;
-
-                                dbg!(&fields);
 
                                 let out = OutMessage::Update { fields };
                                 let msg = axum::extract::ws::Message::Text(
