@@ -3,7 +3,7 @@ use coaxial::{
     context::Context,
     html::{body, button, div, head, html, p, slot},
     live::live,
-    Coaxial, CoaxialResponse,
+    CoaxialResponse, Config,
 };
 
 #[tokio::main]
@@ -11,7 +11,8 @@ async fn main() {
     // build our application with a single route
     let app = Router::new()
         .route("/", live(counter))
-        .layer(Coaxial::with_layout(html(head(()) + body(slot()))));
+        // this following line is optional since this is the default, i'm adding it for documentation purposes
+        .layer(Config::with_layout(html(head(()) + body(slot()))).layer());
 
     // run our app with hyper, listening globally on port 3000
     let listener = tokio::net::TcpListener::bind("0.0.0.0:3000").await.unwrap();

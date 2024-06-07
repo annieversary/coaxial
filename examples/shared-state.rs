@@ -3,9 +3,9 @@ use std::sync::{atomic::AtomicI64, Arc};
 use axum::{extract::State, Router};
 use coaxial::{
     context::Context,
-    html::{body, button, div, head, html, p, slot},
+    html::{button, div, p},
     live::live,
-    Coaxial, CoaxialResponse,
+    CoaxialResponse,
 };
 use tokio::sync::broadcast::{self, Sender};
 
@@ -27,7 +27,6 @@ async fn main() {
     // build our application with a single route
     let app = Router::new()
         .route("/", live(counter))
-        .layer(Coaxial::with_layout(html(head(()) + body(slot()))))
         .with_state(Arc::new(AppState::default()));
 
     // run our app with hyper, listening globally on port 3000

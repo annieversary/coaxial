@@ -10,7 +10,7 @@ use axum::{
 };
 use tokio_util::task::LocalPoolHandle;
 
-use crate::{handler::CoaxialHandler, Coaxial};
+use crate::{handler::CoaxialHandler, Config};
 
 pub fn live<T, H, S>(handler: H) -> MethodRouter<S>
 where
@@ -19,8 +19,10 @@ where
 {
     get(
         |axum::extract::State(state): axum::extract::State<S>,
-         Extension(config): Extension<Coaxial>,
+         config: Option<Extension<Config>>,
          request: Request| {
+            let config = config.map(|c| c.0).unwrap_or_default();
+
             let is_websocket = request
                 .headers()
                 .get("Upgrade")
