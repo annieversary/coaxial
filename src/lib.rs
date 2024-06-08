@@ -1,3 +1,8 @@
+#[macro_use]
+extern crate serde;
+
+use std::sync::Arc;
+
 use axum::{response::Response, Extension};
 
 use context::Context;
@@ -5,7 +10,9 @@ use html::Element;
 
 mod closure;
 pub mod context;
+mod event_handlers;
 mod handler;
+mod helpers;
 pub mod html;
 pub mod live;
 mod state;
@@ -15,14 +22,23 @@ mod state;
 /// Should be added as a layer for the routes.
 #[derive(Clone)]
 pub struct Config {
-    layout: String,
+    layout: Arc<dyn Layout + Send + Sync + 'static>,
 }
 
 impl Config {
-    pub fn with_layout(layout: Element) -> Self {
-        let mut layout = layout.content;
-        layout.push_str(coaxial_adapter());
-        Config { layout }
+    pub fn with_layout<F>(layout: F) -> Self
+    where
+        F: Fn(Element) -> Element + Send + Sync + 'static,
+    {
+        let layout = move |body| {
+            let mut out = layout(body);
+            out.content.push_str(coaxial_adapter());
+            out
+        };
+
+        Config {
+            layout: Arc::new(layout),
+        }
     }
 
     pub fn layer(self) -> Extension<Self> {
@@ -32,8 +48,8 @@ impl Config {
 
 impl Default for Config {
     fn default() -> Self {
-        use html::{body, head, html, slot};
-        Config::with_layout(html(head(()) + body(slot())))
+        use html::{body, head, html};
+        Config::with_layout(|content| html(head(()) + body(content)))
     }
 }
 
@@ -46,4 +62,16 @@ pub struct Output {
 /// Returns a string containing an HTML `<script>` tag containing the adapter JS code.
 pub fn coaxial_adapter() -> &'static str {
     include_str!("base.html")
+}
+
+pub trait Layout {
+    fn call(&self, content: Element) -> Element;
+}
+impl<F> Layout for F
+where
+    F: Fn(Element) -> Element,
+{
+    fn call(&self, content: Element) -> Element {
+        (self)(content)
+    }
 }

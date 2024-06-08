@@ -13,7 +13,7 @@ use axum::{
 use tokio::select;
 use tokio_util::task::LocalPoolHandle;
 
-use crate::{closure::AsyncFn, handler::CoaxialHandler, Config};
+use crate::{closure::AsyncFn, event_handlers::EventHandler, handler::CoaxialHandler, Config};
 
 pub fn live<T, H, S>(handler: H) -> MethodRouter<S>
 where
@@ -38,22 +38,30 @@ where
 
                     let (parts, body) = response.into_parts();
 
-                    let mut output = config
-                        .layout
-                        .clone()
-                        // TODO this is bad
-                        .replace("{^slot^}", &body.element.content);
+                    let mut output = config.layout.call(body.element).content;
 
                     // add listeners for the registered event handlers
-                    let events = body.context.event_handlers.keys();
-                    if events.len() != 0 {
+                    let events = body.context.event_handlers;
+                    if !events.is_empty() {
                         output.push_str("<script>");
-                        for event in events {
-                            output.push_str(&format!(
-                                "document.addEventListener('{event}', params => {{
-        if (window.Coaxial) window.Coaxial.onEvent('{event}', params);
-    }});"
-                            ));
+                        for (name, handler) in events {
+                            output.push_str("document.addEventListener('");
+                            output.push_str(&name);
+                            output.push_str("', params=>{params={");
+
+                            // NOTE: this serves two puposes:
+                            // 1. events are big objects with lots of fields, so we only wanna send the ones we care about over the wire
+                            // 2. serialization of events is wonky, and a lot of times fields are not set correctly
+                            for field in handler.param_fields() {
+                                output.push_str(field);
+                                output.push_str(": params.");
+                                output.push_str(field);
+                                output.push(',');
+                            }
+
+                            output.push_str("};if (window.Coaxial) window.Coaxial.onEvent('");
+                            output.push_str(&name);
+                            output.push_str("', params);});");
                         }
                         output.push_str("</script>");
                     }
@@ -113,7 +121,7 @@ where
 }
 
 type Closures = std::collections::HashMap<String, Arc<dyn AsyncFn<()>>>;
-type EventHandlers = std::collections::HashMap<String, Arc<dyn AsyncFn<(serde_json::Value,)>>>;
+type EventHandlers = std::collections::HashMap<String, Arc<dyn EventHandler>>;
 
 enum SocketError {
     Fatal,
@@ -152,9 +160,7 @@ async fn handle_socket_message(
             };
 
             let event = event.clone();
-            pool.spawn_pinned(move || event.call((params,)))
-                .await
-                .unwrap();
+            pool.spawn_pinned(move || event.call(params)).await.unwrap();
         }
     }
 

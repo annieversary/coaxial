@@ -5,6 +5,7 @@ use tokio::sync::mpsc::{unbounded_channel, UnboundedReceiver, UnboundedSender};
 
 use crate::{
     closure::{AsyncFn, Closure},
+    event_handlers::{EventHandler, EventHandlerWrapper},
     html::Element,
     state::{State, StateInner},
     CoaxialResponse, Output,
@@ -16,9 +17,7 @@ pub struct Context {
 
     state_owner: Owner<SyncStorage>,
     pub(crate) closures: HashMap<String, Arc<dyn AsyncFn<()>>>,
-    // TODO idk how to erase the param type
-    // maybe we just do serde_json::Value directly
-    pub(crate) event_handlers: HashMap<String, Arc<dyn AsyncFn<(serde_json::Value,)>>>,
+    pub(crate) event_handlers: HashMap<String, Arc<dyn EventHandler>>,
 
     pub(crate) changes_rx: UnboundedReceiver<(u64, String)>,
     changes_tx: UnboundedSender<(u64, String)>,
@@ -53,13 +52,18 @@ impl Context {
         }
     }
 
-    pub fn on<F, Fut>(&mut self, name: impl ToString, closure: F)
+    // TODO ideally, we would store a function that takes a type that impls Deserialize
+    // idk how to do it with multiple functions tho
+    pub fn on<F, Fut, P>(&mut self, name: impl ToString, closure: F)
     where
-        F: Fn(serde_json::Value) -> Fut + Send + Sync + 'static,
-        Fut: Future<Output = ()> + Send + 'static,
+        F: Fn(P) -> Fut + Send + Sync + 'static,
+        Fut: Future<Output = ()> + Send + Sync + 'static,
+        P: serde::de::DeserializeOwned + Send + Sync + 'static,
     {
-        self.event_handlers
-            .insert(name.to_string(), Arc::new(closure));
+        self.event_handlers.insert(
+            name.to_string(),
+            Arc::new(EventHandlerWrapper::new(closure)),
+        );
     }
 
     pub fn with(self, element: Element) -> CoaxialResponse {

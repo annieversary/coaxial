@@ -24,8 +24,6 @@
         }
 
         onEvent(name, params) {
-            // TODO why the fuck are the params not working correctly if i dont do this
-            params = { clientX: params.clientX, clientY: params.clientY };
             this.send({ t: 'Event', name, params });
         }
 
@@ -38,4 +36,16 @@
         window.Coaxial = new Coaxial();
     });
 
+    // https://stackoverflow.com/a/34519193
+    function stringifyEvent(e) {
+        const obj = {};
+        for (let k in e) {
+            obj[k] = e[k];
+        }
+        return JSON.stringify(obj, (k, v) => {
+            if (v instanceof Node) return 'Node';
+            if (v instanceof Window) return 'Window';
+            return v;
+        }, ' ');
+    }
 </script>
