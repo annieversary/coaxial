@@ -1,4 +1,6 @@
-use std::{fmt::Display, future::Future, pin::Pin};
+use std::{fmt::Display, future::Future, marker::PhantomData, pin::Pin};
+
+use axum::{extract::FromRequestParts, http::request::Parts};
 
 pub struct Closure {
     pub(crate) id: String,
@@ -9,33 +11,83 @@ impl Display for Closure {
     }
 }
 
-pub(crate) trait AsyncFn<P>: Send + Sync {
-    fn call(&self, params: P) -> Pin<Box<dyn Future<Output = ()> + 'static>>;
+pub trait ClosureTrait<S>: Send + Sync {
+    fn call<'a>(&'a self, parts: Parts, state: S) -> Pin<Box<dyn Future<Output = ()> + 'a>>;
 }
 
-impl<T: Send + Sync, F> AsyncFn<()> for T
+impl<S, F, Fut> ClosureTrait<S> for ClosureWrapper<F, ()>
+where
+    F: Fn() -> Fut + Send + Sync,
+    Fut: Future<Output = ()> + 'static,
+{
+    fn call(&self, _parts: Parts, _state: S) -> Pin<Box<dyn Future<Output = ()> + 'static>> {
+        Box::pin((self.func)())
+    }
+}
+
+macro_rules! impl_closure_trait {
+    (
+        $($ty:ident),*
+    ) => {
+        #[allow(non_snake_case, unused_mut)]
+        impl<S, F, Fut, $($ty,)*> ClosureTrait<S> for ClosureWrapper<F, ($($ty,)*)>
+        where
+            F: Fn($($ty,)*) -> Fut + Send + Sync,
+            Fut: Future<Output = ()> + 'static,
+        $( $ty: FromRequestParts<S> + Send + Sync, )*
+            S: 'static
+        {
+            fn call<'a>(
+                &'a self,
+                mut parts: Parts,
+                state: S,
+            ) -> Pin<Box<dyn Future<Output = ()> + 'a>> {
+                Box::pin(async move {
+                    $(
+                        let $ty = match $ty::from_request_parts(&mut parts, &state).await {
+                            Ok(value) => value,
+                            Err(_rejection) => todo!("rejections aren't handled yet"),
+                        };
+                    )*
+
+                    (self.func)($($ty,)*).await
+                })
+            }
+        }
+    };
+}
+
+pub struct ClosureWrapper<T, P> {
+    func: T,
+    _phantom: PhantomData<P>,
+}
+
+pub trait IntoClosure<P, S> {
+    fn wrap<F>(func: F) -> ClosureWrapper<F, P> {
+        ClosureWrapper {
+            func,
+            _phantom: Default::default(),
+        }
+    }
+}
+
+impl<S, T, F> IntoClosure<(), S> for T
 where
     T: Fn() -> F,
     F: Future<Output = ()> + 'static,
 {
-    fn call(&self, _params: ()) -> Pin<Box<dyn Future<Output = ()> + 'static>> {
-        Box::pin(self())
-    }
 }
 
-macro_rules! impl_async_fn {
+macro_rules! impl_into_closure {
     (
         $($ty:ident),*
     ) => {
-        #[allow(non_snake_case)]
-        impl<T: Send + Sync, F, $($ty,)*> AsyncFn<($($ty,)*)> for T
+        impl<S, T, F, $($ty,)*> IntoClosure<($($ty,)*), S> for T
         where
             T: Fn($($ty,)*) -> F,
             F: Future<Output = ()> + 'static,
+            $( $ty: FromRequestParts<S>, )*
         {
-            fn call(&self, ($($ty,)*): ($($ty,)*)) -> Pin<Box<dyn Future<Output = ()> + 'static>> {
-                Box::pin(self($($ty,)*))
-            }
         }
     };
 }
@@ -62,4 +114,5 @@ macro_rules! all_the_tuples {
     };
 }
 
-all_the_tuples!(impl_async_fn);
+all_the_tuples!(impl_closure_trait);
+all_the_tuples!(impl_into_closure);

@@ -6,6 +6,7 @@ use axum::{
         ws::{Message, WebSocket},
         FromRequestParts, Request, WebSocketUpgrade,
     },
+    http::request::Parts,
     response::IntoResponse,
     routing::{get, MethodRouter},
     Extension,
@@ -13,7 +14,7 @@ use axum::{
 use tokio::select;
 use tokio_util::task::LocalPoolHandle;
 
-use crate::{closure::AsyncFn, event_handlers::EventHandler, handler::CoaxialHandler, Config};
+use crate::{closure::ClosureTrait, event_handlers::EventHandler, handler::CoaxialHandler, Config};
 
 pub fn live<T, H, S>(handler: H) -> MethodRouter<S>
 where
@@ -70,12 +71,13 @@ where
                 }
 
                 let (mut parts, body) = request.into_parts();
+                let request_parts = parts.clone();
                 let ws = WebSocketUpgrade::from_request_parts(&mut parts, &state)
                     .await
                     .unwrap();
                 let request = Request::from_parts(parts, body);
 
-                let response = handler.call(request, state).await;
+                let response = handler.call(request, state.clone()).await;
 
                 ws.on_upgrade(|mut socket: WebSocket| async move {
                     let (_parts, body) = response.into_parts();
@@ -94,6 +96,8 @@ where
                                 let res = handle_socket_message(
                                     msg.map_err(|_| ()),
                                     &pool,
+                                    request_parts.clone(),
+                                    state.clone(),
                                     &context.closures,
                                     &context.event_handlers,
                                 )
@@ -120,7 +124,7 @@ where
     )
 }
 
-type Closures = std::collections::HashMap<String, Arc<dyn AsyncFn<()>>>;
+type Closures<S> = std::collections::HashMap<String, Arc<dyn ClosureTrait<S>>>;
 type EventHandlers = std::collections::HashMap<String, Arc<dyn EventHandler>>;
 
 enum SocketError {
@@ -128,10 +132,12 @@ enum SocketError {
     SkipMessage,
 }
 
-async fn handle_socket_message(
+async fn handle_socket_message<S: Clone + Send + Sync + 'static>(
     msg: Result<Message, ()>,
     pool: &LocalPoolHandle,
-    closures: &Closures,
+    parts: Parts,
+    state: S,
+    closures: &Closures<S>,
     events: &EventHandlers,
 ) -> Result<(), SocketError> {
     let msg: InMessage = match msg {
@@ -152,7 +158,8 @@ async fn handle_socket_message(
             };
 
             let closure = closure.clone();
-            pool.spawn_pinned(move || closure.call(())).await.unwrap();
+            let closure = move || async move { closure.call(parts, state).await };
+            pool.spawn_pinned(closure).await.unwrap();
         }
         InMessage::Event { name, params } => {
             let Some(event) = events.get(&name) else {

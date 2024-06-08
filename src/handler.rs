@@ -4,17 +4,18 @@ use std::{future::Future, pin::Pin};
 use crate::{context::Context, CoaxialResponse};
 
 pub trait CoaxialHandler<T, S>: Clone + Send + Sized + 'static {
-    type Future: Future<Output = CoaxialResponse> + Send + 'static;
+    type Future: Future<Output = CoaxialResponse<S>> + Send + 'static;
     fn call(self, req: Request, state: S) -> Self::Future;
 }
 
 // implement handler for the basic func that takes only the context
 impl<F, Fut, S> CoaxialHandler<((),), S> for F
 where
-    F: FnOnce(Context) -> Fut + Clone + Send + 'static,
-    Fut: Future<Output = CoaxialResponse> + Send,
+    F: FnOnce(Context<S>) -> Fut + Clone + Send + 'static,
+    Fut: Future<Output = CoaxialResponse<S>> + Send,
+    S: Send + Sync + 'static,
 {
-    type Future = Pin<Box<dyn Future<Output = CoaxialResponse> + Send>>;
+    type Future = Pin<Box<dyn Future<Output = CoaxialResponse<S>> + Send>>;
 
     fn call(self, _req: Request, _state: S) -> Self::Future {
         Box::pin(async move { self(Context::default()).await })
@@ -28,13 +29,13 @@ macro_rules! impl_handler {
         #[allow(non_snake_case, unused_mut)]
         impl<F, Fut, S, M, $($ty,)* $last> CoaxialHandler<((M, $($ty,)* $last,),), S> for F
         where
-            F: FnOnce(Context, $($ty,)* $last,) -> Fut + Clone + Send + 'static,
-            Fut: Future<Output = CoaxialResponse> + Send,
+            F: FnOnce(Context<S>, $($ty,)* $last,) -> Fut + Clone + Send + 'static,
+            Fut: Future<Output = CoaxialResponse<S>> + Send,
             S: Send + Sync + 'static,
             $( $ty: FromRequestParts<S> + Send, )*
             $last: FromRequest<S, M> + Send,
         {
-            type Future = Pin<Box<dyn Future<Output = CoaxialResponse> + Send>>;
+            type Future = Pin<Box<dyn Future<Output = CoaxialResponse<S>> + Send>>;
 
             fn call(self, req: Request, state: S) -> Self::Future {
                 Box::pin(async move {

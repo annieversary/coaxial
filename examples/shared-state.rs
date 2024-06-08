@@ -21,6 +21,16 @@ impl Default for AppState {
         Self { counter, tx }
     }
 }
+impl AppState {
+    fn change(&self, diff: i64) -> i64 {
+        let out = self
+            .counter
+            .fetch_add(diff, std::sync::atomic::Ordering::SeqCst);
+        self.tx.send(()).unwrap();
+
+        out + diff
+    }
+}
 
 #[tokio::main]
 async fn main() {
@@ -34,34 +44,22 @@ async fn main() {
     axum::serve(listener, app).await.unwrap();
 }
 
-async fn counter(mut ctx: Context, State(state): State<Arc<AppState>>) -> CoaxialResponse {
+async fn counter(
+    mut ctx: Context<Arc<AppState>>,
+    State(state): State<Arc<AppState>>,
+) -> CoaxialResponse<Arc<AppState>> {
     let counter = ctx.use_state(state.counter.load(std::sync::atomic::Ordering::SeqCst));
 
-    let s = state.clone();
-    let add = ctx.use_closure(move || {
-        let state = s.clone();
-        async move {
-            let out = state
-                .counter
-                .fetch_add(1, std::sync::atomic::Ordering::SeqCst);
-            counter.set(out + 1);
-            state.tx.send(()).unwrap();
-        }
+    let add = ctx.use_closure(move |State(state): State<Arc<AppState>>| async move {
+        let out = state.change(1);
+        counter.set(out);
     });
-    let s = state.clone();
-    let sub = ctx.use_closure(move || {
-        let state = s.clone();
-        async move {
-            let out = state
-                .counter
-                .fetch_sub(1, std::sync::atomic::Ordering::SeqCst);
-            counter.set(out - 1);
-            state.tx.send(()).unwrap();
-        }
+    let sub = ctx.use_closure(move |State(state): State<Arc<AppState>>| async move {
+        let out = state.change(-1);
+        counter.set(out);
     });
 
-    // TODO this doesn't actually dynamically update things
-    // TODO this updates things when it's changed on our own closure
+    // TODO this should ignore events sent by this page
     let state = state.clone();
     tokio::spawn(async move {
         let mut rx = state.tx.subscribe();

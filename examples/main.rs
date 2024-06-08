@@ -1,7 +1,7 @@
 use axum::Router;
 use coaxial::{
     context::Context,
-    html::{body, button, div, head, html, p, slot},
+    html::{body, button, div, head, html, p},
     live::live,
     CoaxialResponse, Config,
 };

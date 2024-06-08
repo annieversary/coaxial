@@ -4,33 +4,35 @@ use std::{collections::HashMap, future::Future, sync::Arc};
 use tokio::sync::mpsc::{unbounded_channel, UnboundedReceiver, UnboundedSender};
 
 use crate::{
-    closure::{AsyncFn, Closure},
+    closure::{Closure, ClosureTrait, ClosureWrapper, IntoClosure},
     event_handlers::{EventHandler, EventHandlerWrapper},
     html::Element,
     state::{State, StateInner},
     CoaxialResponse, Output,
 };
 
-pub struct Context {
+pub struct Context<S = ()> {
     uuid: u64,
     index: u64,
 
     state_owner: Owner<SyncStorage>,
-    pub(crate) closures: HashMap<String, Arc<dyn AsyncFn<()>>>,
+    pub(crate) closures: HashMap<String, Arc<dyn ClosureTrait<S>>>,
     pub(crate) event_handlers: HashMap<String, Arc<dyn EventHandler>>,
 
     pub(crate) changes_rx: UnboundedReceiver<(u64, String)>,
     changes_tx: UnboundedSender<(u64, String)>,
 }
 
-impl Context {
-    pub fn use_closure<F, Fut>(&mut self, closure: F) -> Closure
+impl<S> Context<S> {
+    pub fn use_closure<P, I>(&mut self, closure: I) -> Closure
     where
-        F: Fn() -> Fut + Send + Sync + 'static,
-        Fut: Future<Output = ()> + Send + 'static,
+        I: IntoClosure<P, S> + Send + Sync + 'static,
+        P: Send + Sync + 'static,
+        ClosureWrapper<I, P>: ClosureTrait<S>,
     {
         self.index += 1;
         let id = format!("{}-{}", self.uuid, self.index);
+        let closure: ClosureWrapper<I, P> = <I as IntoClosure<P, S>>::wrap(closure);
         self.closures.insert(id.clone(), Arc::new(closure));
 
         Closure { id }
@@ -66,7 +68,7 @@ impl Context {
         );
     }
 
-    pub fn with(self, element: Element) -> CoaxialResponse {
+    pub fn with(self, element: Element) -> CoaxialResponse<S> {
         Response::new(Output {
             element,
             context: self,
@@ -74,7 +76,7 @@ impl Context {
     }
 }
 
-impl Default for Context {
+impl<S> Default for Context<S> {
     fn default() -> Self {
         let (changes_tx, changes_rx) = unbounded_channel();
 

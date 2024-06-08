@@ -53,10 +53,10 @@ impl Default for Config {
     }
 }
 
-pub type CoaxialResponse = Response<Output>;
-pub struct Output {
+pub type CoaxialResponse<S = ()> = Response<Output<S>>;
+pub struct Output<S = ()> {
     element: Element,
-    context: Context,
+    context: Context<S>,
 }
 
 /// Returns a string containing an HTML `<script>` tag containing the adapter JS code.
