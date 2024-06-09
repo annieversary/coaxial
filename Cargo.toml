@@ -3,6 +3,11 @@ name = "coaxial"
 version = "0.1.0"
 edition = "2021"
 
+description = "Real-time reactive server rendered HTML"
+authors = ["annieversary <annie@versary.town>"]
+repository = "https://github.com/annieversary/coaxial"
+license = "MIT OR Apache-2.0"
+
 [dependencies]
 axum = { version = "0.7.5", features = ["ws"] }
 generational-box = "0.5.1"
