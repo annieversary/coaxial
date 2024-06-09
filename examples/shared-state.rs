@@ -9,34 +9,11 @@ use coaxial::{
 };
 use tokio::sync::broadcast::{self, Sender};
 
-struct AppState {
-    counter: AtomicI64,
-    tx: Sender<()>,
-}
-impl Default for AppState {
-    fn default() -> Self {
-        let (tx, _rx) = broadcast::channel(100);
-        let counter = AtomicI64::new(0);
-
-        Self { counter, tx }
-    }
-}
-impl AppState {
-    fn change(&self, diff: i64) -> i64 {
-        let out = self
-            .counter
-            .fetch_add(diff, std::sync::atomic::Ordering::SeqCst);
-        self.tx.send(()).unwrap();
-
-        out + diff
-    }
-}
-
 #[tokio::main]
 async fn main() {
     let app = Router::new()
         .route("/", live(counter))
-        .with_state(Arc::new(AppState::default()));
+        .with_state(Arc::new(AppState::new()));
 
     let listener = tokio::net::TcpListener::bind("0.0.0.0:3000").await.unwrap();
     axum::serve(listener, app).await.unwrap();
@@ -49,15 +26,14 @@ async fn counter(
     let counter = ctx.use_state(state.counter.load(std::sync::atomic::Ordering::SeqCst));
 
     let add = ctx.use_closure(move |State(state): State<Arc<AppState>>| async move {
-        let out = state.change(1);
+        let out = state.sum(1);
         counter.set(out);
     });
     let sub = ctx.use_closure(move |State(state): State<Arc<AppState>>| async move {
-        let out = state.change(-1);
+        let out = state.sum(-1);
         counter.set(out);
     });
 
-    // TODO this should ignore events sent by this page
     let state = state.clone();
     tokio::spawn(async move {
         let mut rx = state.tx.subscribe();
@@ -69,4 +45,26 @@ async fn counter(
     ctx.with(div(p(counter)
         + button(("+", ("onclick", add)))
         + button(("-", ("onclick", sub)))))
+}
+
+struct AppState {
+    counter: AtomicI64,
+    tx: Sender<()>,
+}
+impl AppState {
+    fn new() -> Self {
+        let (tx, _rx) = broadcast::channel(100);
+        let counter = AtomicI64::new(0);
+
+        Self { counter, tx }
+    }
+
+    fn sum(&self, diff: i64) -> i64 {
+        let out = self
+            .counter
+            .fetch_add(diff, std::sync::atomic::Ordering::SeqCst);
+        self.tx.send(()).unwrap();
+
+        out + diff
+    }
 }

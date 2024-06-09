@@ -13,7 +13,7 @@ async fn counter(mut ctx: Context) -> CoaxialResponse {
     let x = ctx.use_state(0i32);
 
     #[derive(Debug, serde::Deserialize)]
-    struct MouseMove {
+    struct MouseClick {
         #[serde(rename = "clientX")]
         x: i32,
         #[serde(rename = "clientY")]
@@ -21,7 +21,7 @@ async fn counter(mut ctx: Context) -> CoaxialResponse {
     }
 
     // this is a global event, applies to document
-    ctx.on("click", move |event: MouseMove| async move {
+    ctx.on("click", move |event: MouseClick| async move {
         x.set(event.x);
     });
 
