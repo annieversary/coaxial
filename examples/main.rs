@@ -1,7 +1,7 @@
 use axum::Router;
 use coaxial::{
     context::Context,
-    html::{body, button, div, head, html, p},
+    html::{body, button, div, head, html, input},
     live::live,
     CoaxialResponse, Config,
 };
@@ -27,7 +27,7 @@ async fn counter(mut ctx: Context) -> CoaxialResponse {
         counter.set(counter.get() - 1);
     });
 
-    ctx.with(div(p(counter)
+    ctx.with(div(input(((), ("value", counter)))
         + button(("+", ("onclick", add)))
         + button(("-", ("onclick", sub)))))
 }

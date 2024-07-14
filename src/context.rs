@@ -1,13 +1,14 @@
 use axum::response::Response;
 use generational_box::{AnyStorage, Owner, SyncStorage};
-use std::{collections::HashMap, future::Future, sync::Arc};
+use serde::de::DeserializeOwned;
+use std::{collections::HashMap, fmt::Display, future::Future, sync::Arc};
 use tokio::sync::mpsc::{unbounded_channel, UnboundedReceiver, UnboundedSender};
 
 use crate::{
     closure::{Closure, ClosureTrait, ClosureWrapper, IntoClosure},
     event_handlers::{EventHandler, EventHandlerWrapper},
     html::Element,
-    state::{State, StateInner},
+    state::{AnyState, State, StateInner},
     CoaxialResponse, Output,
 };
 
@@ -16,6 +17,7 @@ pub struct Context<S = ()> {
     index: u64,
 
     state_owner: Owner<SyncStorage>,
+    pub(crate) states: HashMap<u64, Arc<dyn AnyState>>,
     pub(crate) closures: HashMap<String, Arc<dyn ClosureTrait<S>>>,
     pub(crate) event_handlers: HashMap<String, Arc<dyn EventHandler>>,
 
@@ -39,9 +41,12 @@ impl<S> Context<S> {
     }
 
     #[track_caller]
-    pub fn use_state<T: Send + Sync>(&mut self, value: T) -> State<T> {
+    pub fn use_state<T: DeserializeOwned + Display + Send + Sync + 'static>(
+        &mut self,
+        value: T,
+    ) -> State<T> {
         self.index += 1;
-        State {
+        let state = State {
             inner: self.state_owner.insert_with_caller(
                 StateInner {
                     value,
@@ -51,7 +56,11 @@ impl<S> Context<S> {
                 std::panic::Location::caller(),
             ),
             id: self.index + self.uuid,
-        }
+        };
+
+        self.states.insert(state.id, Arc::new(state.clone()));
+
+        state
     }
 
     // TODO ideally, we would store a function that takes a type that impls Deserialize
@@ -85,6 +94,7 @@ impl<S> Default for Context<S> {
             uuid: 100000,
             index: 0,
             state_owner: <SyncStorage as AnyStorage>::owner(),
+            states: Default::default(),
             closures: Default::default(),
             event_handlers: Default::default(),
 

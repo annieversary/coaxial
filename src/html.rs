@@ -2,6 +2,8 @@ use std::{fmt::Display, ops::Add};
 
 use crate::state::State;
 
+// these should builld an ast
+
 #[derive(Default)]
 pub struct Element {
     pub(crate) content: String,
@@ -99,6 +101,33 @@ impl<T: Display + Clone + Send + Sync> From<State<T>> for ElementParams {
     }
 }
 
+// TODO so ideally, we have an individual Attribute type, then a bunch of shit that can get transformed
+// into a list of tuples, then at the end they get merged into a single one
+// so like all "onchange" ones get merged together
+
+impl<A: ToString, B> From<(A, State<B>)> for Attributes
+where
+    B: Clone + Display + Send + Sync + 'static,
+{
+    fn from((a, b): (A, State<B>)) -> Self {
+        let a = a.to_string();
+        let mut list = vec![
+            (a.clone(), b.get().to_string()),
+            (format!("coax-change-{}", b.id), a.clone()),
+        ];
+
+        if &a == "value" || &a == "checked" {
+            list.push((
+                "onchange".to_string(),
+                format!("window.Coaxial.setValue({}, this['{}'])", b.id, a),
+            ));
+        }
+
+        dbg!(&list);
+
+        Self { list }
+    }
+}
 impl<A: ToString, B: ToString> From<(A, B)> for Attributes {
     fn from((a, b): (A, B)) -> Self {
         Self {
@@ -154,11 +183,18 @@ macro_rules! make_element {
     };
 }
 
-make_element!(html, body, head, div, p, button, a, section, aside, main, b);
+make_element!(html, body, head, div, p, button, a, section, aside, main, b, input);
 
-pub fn slot() -> Element {
-    Element {
-        content: "{^slot^}".to_string(),
+pub fn r#if(
+    condition: State<bool>,
+    this: impl Fn() -> Element,
+    that: impl Fn() -> Element,
+) -> Element {
+    // TODO wrap this in something that can change
+    if condition.get() {
+        this()
+    } else {
+        that()
     }
 }
 

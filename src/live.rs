@@ -14,7 +14,10 @@ use axum::{
 use tokio::select;
 use tokio_util::task::LocalPoolHandle;
 
-use crate::{closure::ClosureTrait, event_handlers::EventHandler, handler::CoaxialHandler, Config};
+use crate::{
+    closure::ClosureTrait, event_handlers::EventHandler, handler::CoaxialHandler, state::AnyState,
+    Config,
+};
 
 pub fn live<T, H, S>(handler: H) -> MethodRouter<S>
 where
@@ -98,6 +101,7 @@ where
                                     &pool,
                                     request_parts.clone(),
                                     state.clone(),
+                                    &context.states,
                                     &context.closures,
                                     &context.event_handlers,
                                 )
@@ -126,6 +130,7 @@ where
 
 type Closures<S> = std::collections::HashMap<String, Arc<dyn ClosureTrait<S>>>;
 type EventHandlers = std::collections::HashMap<String, Arc<dyn EventHandler>>;
+type States = std::collections::HashMap<u64, Arc<dyn AnyState>>;
 
 enum SocketError {
     Fatal,
@@ -137,6 +142,7 @@ async fn handle_socket_message<S: Clone + Send + Sync + 'static>(
     pool: &LocalPoolHandle,
     parts: Parts,
     state: S,
+    states: &States,
     closures: &Closures<S>,
     events: &EventHandlers,
 ) -> Result<(), SocketError> {
@@ -169,6 +175,14 @@ async fn handle_socket_message<S: Clone + Send + Sync + 'static>(
             let event = event.clone();
             pool.spawn_pinned(move || event.call(params)).await.unwrap();
         }
+        InMessage::Set { id, value } => {
+            // get the state and set it
+            let Some(state) = states.get(&id) else {
+                // TODO maybe we should error here?
+                return Ok(());
+            };
+            state.set_value(value);
+        }
     }
 
     Ok(())
@@ -183,6 +197,10 @@ enum InMessage {
     Event {
         name: String,
         params: serde_json::Value,
+    },
+    Set {
+        id: u64,
+        value: serde_json::Value,
     },
 }
 #[derive(serde::Serialize)]
