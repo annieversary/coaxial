@@ -1,5 +1,10 @@
 use axum::Router;
-use coaxial::{context::Context, html::p, live::live, CoaxialResponse};
+use coaxial::{
+    context::Context,
+    html::{p, Content},
+    live::live,
+    CoaxialResponse,
+};
 
 #[tokio::main]
 async fn main() {
@@ -25,5 +30,5 @@ async fn counter(mut ctx: Context) -> CoaxialResponse {
         x.set(event.x);
     });
 
-    ctx.with(p(x))
+    ctx.with(p(Content::State(x.into()), Default::default()))
 }

@@ -30,12 +30,6 @@ impl Config {
     where
         F: Fn(Element) -> Element + Send + Sync + 'static,
     {
-        let layout = move |body| {
-            let mut out = layout(body);
-            out.content.push_str(coaxial_adapter());
-            out
-        };
-
         Config {
             layout: Arc::new(layout),
         }
@@ -48,8 +42,20 @@ impl Config {
 
 impl Default for Config {
     fn default() -> Self {
-        use html::{body, head, html};
-        Config::with_layout(|content| html(head(()) + body(content)))
+        use html::{body, head, html, Content};
+
+        Config::with_layout(|content| {
+            html(
+                Content::Children(vec![
+                    head(Content::Empty, Default::default()),
+                    body(
+                        Content::Children(vec![content, coaxial_adapter_script()]),
+                        Default::default(),
+                    ),
+                ]),
+                Default::default(),
+            )
+        })
     }
 }
 
@@ -60,8 +66,12 @@ pub struct Output<S = ()> {
 }
 
 /// Returns a string containing an HTML `<script>` tag containing the adapter JS code.
-pub fn coaxial_adapter() -> &'static str {
-    include_str!("base.html")
+pub fn coaxial_adapter_script() -> Element {
+    Element {
+        name: "script".to_string(),
+        content: html::Content::Raw(include_str!("base.js").to_string()),
+        attributes: Default::default(),
+    }
 }
 
 pub trait Layout {

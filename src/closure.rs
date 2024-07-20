@@ -1,14 +1,9 @@
-use std::{fmt::Display, future::Future, marker::PhantomData, pin::Pin};
+use std::{future::Future, marker::PhantomData, pin::Pin};
 
 use axum::{extract::FromRequestParts, http::request::Parts};
 
 pub struct Closure {
     pub(crate) id: String,
-}
-impl Display for Closure {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "window.Coaxial.callClosure('{}')", self.id)
-    }
 }
 
 pub trait ClosureTrait<S>: Send + Sync {

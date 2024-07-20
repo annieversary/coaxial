@@ -3,8 +3,9 @@
 
 use axum::{extract::Query, Router};
 use coaxial::{
+    attrs,
     context::Context,
-    html::{button, div, p},
+    html::{button, div, p, Attribute, Content},
     live::live,
     CoaxialResponse,
 };
@@ -29,5 +30,14 @@ async fn counter(mut ctx: Context) -> CoaxialResponse {
         counter.set(counter.get() + query.amount);
     });
 
-    ctx.with(div(p(counter) + button(("update", ("onclick", update)))))
+    ctx.with(div(
+        Content::Children(vec![
+            p(Content::State(counter.into()), Default::default()),
+            button(
+                Content::Text("update".to_string()),
+                attrs!("onclick" => Attribute::Closure(update.into())),
+            ),
+        ]),
+        Default::default(),
+    ))
 }

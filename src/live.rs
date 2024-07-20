@@ -7,7 +7,6 @@ use axum::{
         FromRequestParts, Request, WebSocketUpgrade,
     },
     http::request::Parts,
-    response::IntoResponse,
     routing::{get, MethodRouter},
     Extension,
 };
@@ -15,8 +14,8 @@ use tokio::select;
 use tokio_util::task::LocalPoolHandle;
 
 use crate::{
-    closure::ClosureTrait, event_handlers::EventHandler, handler::CoaxialHandler, state::AnyState,
-    Config,
+    closure::ClosureTrait, event_handlers::EventHandler, handler::CoaxialHandler,
+    html::DOCTYPE_HTML, state::AnyState, Config,
 };
 
 pub fn live<T, H, S>(handler: H) -> MethodRouter<S>
@@ -42,33 +41,38 @@ where
 
                     let (parts, body) = response.into_parts();
 
-                    let mut output = config.layout.call(body.element).content;
+                    let element = config.layout.call(body.element);
 
                     // add listeners for the registered event handlers
                     let events = body.context.event_handlers;
                     if !events.is_empty() {
-                        output.push_str("<script>");
+                        let mut script = String::new();
+
                         for (name, handler) in events {
-                            output.push_str("document.addEventListener('");
-                            output.push_str(&name);
-                            output.push_str("', params=>{params={");
+                            script.push_str("document.addEventListener('");
+                            script.push_str(&name);
+                            script.push_str("', params=>{params={");
 
                             // NOTE: this serves two puposes:
                             // 1. events are big objects with lots of fields, so we only wanna send the ones we care about over the wire
                             // 2. serialization of events is wonky, and a lot of times fields are not set correctly
                             for field in handler.param_fields() {
-                                output.push_str(field);
-                                output.push_str(": params.");
-                                output.push_str(field);
-                                output.push(',');
+                                script.push_str(field);
+                                script.push_str(": params.");
+                                script.push_str(field);
+                                script.push(',');
                             }
 
-                            output.push_str("};if (window.Coaxial) window.Coaxial.onEvent('");
-                            output.push_str(&name);
-                            output.push_str("', params);});");
+                            script.push_str("};if (window.Coaxial) window.Coaxial.onEvent('");
+                            script.push_str(&name);
+                            script.push_str("', params);});");
                         }
-                        output.push_str("</script>");
+
+                        // TODO add to the page
                     }
+
+                    let mut output = String::from(DOCTYPE_HTML);
+                    element.render(&mut output);
 
                     return axum::response::Response::from_parts(parts, Body::from(output));
                 }
@@ -122,7 +126,6 @@ where
                         }
                     }
                 })
-                .into_response()
             }
         },
     )

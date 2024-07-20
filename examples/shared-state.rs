@@ -2,8 +2,9 @@ use std::sync::{atomic::AtomicI64, Arc};
 
 use axum::{extract::State, Router};
 use coaxial::{
+    attrs,
     context::Context,
-    html::{button, div, p},
+    html::{button, div, p, Attribute, Content},
     live::live,
     CoaxialResponse,
 };
@@ -42,9 +43,24 @@ async fn counter(
         }
     });
 
-    ctx.with(div(p(counter)
-        + button(("+", ("onclick", add)))
-        + button(("-", ("onclick", sub)))))
+    ctx.with(div(
+        Content::Children(vec![
+            p(Content::State(counter.into()), Default::default()),
+            button(
+                Content::Text("+".to_string()),
+                attrs!("onclick" => Attribute::Closure(add.into())),
+            ),
+            button(
+                Content::Text("-".to_string()),
+                attrs!("onclick" => Attribute::Closure(sub.into())),
+            ),
+        ]),
+        Default::default(),
+    ))
+
+    // ctx.with(div(p(counter)
+    //     + button(("+", ("onclick", add)))
+    //     + button(("-", ("onclick", sub)))))
 }
 
 struct AppState {

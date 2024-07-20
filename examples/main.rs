@@ -1,7 +1,8 @@
 use axum::Router;
 use coaxial::{
+    attrs, coaxial_adapter_script,
     context::Context,
-    html::{body, button, div, head, html, input},
+    html::{body, button, div, head, html, input, Attribute, Content},
     live::live,
     CoaxialResponse, Config,
 };
@@ -10,8 +11,22 @@ use coaxial::{
 async fn main() {
     let app = Router::new()
         .route("/", live(counter))
-        // this following line is optional since this is the default, i'm adding it for documentation purposes
-        .layer(Config::with_layout(|content| html(head(()) + body(content))).layer());
+        // this following layer call is optional since this is the default, i'm adding it for documentation purposes
+        .layer(
+            Config::with_layout(|content| {
+                html(
+                    Content::Children(vec![
+                        head(Content::Empty, Default::default()),
+                        body(
+                            Content::Children(vec![content, coaxial_adapter_script()]),
+                            Default::default(),
+                        ),
+                    ]),
+                    Default::default(),
+                )
+            })
+            .layer(),
+        );
 
     let listener = tokio::net::TcpListener::bind("0.0.0.0:3000").await.unwrap();
     axum::serve(listener, app).await.unwrap();
@@ -27,7 +42,20 @@ async fn counter(mut ctx: Context) -> CoaxialResponse {
         counter.set(counter.get() - 1);
     });
 
-    ctx.with(div(input(((), ("value", counter)))
-        + button(("+", ("onclick", add)))
-        + button(("-", ("onclick", sub)))))
+    let element = div(
+        Content::Children(vec![
+            input(attrs!("value" => Attribute::State(counter.into()))),
+            button(
+                Content::Text("+".to_string()),
+                attrs!("onclick" => Attribute::Closure(add.into())),
+            ),
+            button(
+                Content::Text("-".to_string()),
+                attrs!("onclick" => Attribute::Closure(sub.into())),
+            ),
+        ]),
+        Default::default(),
+    );
+
+    ctx.with(element)
 }
