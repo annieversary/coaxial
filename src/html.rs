@@ -18,7 +18,7 @@ pub struct Element {
 }
 
 impl Element {
-    pub fn render(&self, output: &mut String) {
+    pub(crate) fn render(&self, output: &mut String) {
         output.push('<');
         output.push_str(&self.name);
 
@@ -32,6 +32,8 @@ impl Element {
             output.push_str(" />");
             return;
         }
+
+        self.content.reactive_attributes(output);
 
         output.push('>');
 
@@ -49,12 +51,33 @@ pub enum Content {
     Empty,
     Raw(String),
     Text(String),
+    // TODO this technically means we can have a vec![Text, Children(vec![Element, Element])]
+    // which doesn't make sense, since it'd really be a vec![Text, Element, Element]
+    // TODO change to Element
     Children(Vec<Element>),
     List(Vec<Content>),
     State(StateDescriptor),
 }
 impl Content {
-    pub fn render(&self, output: &mut String) {
+    pub(crate) fn reactive_attributes(&self, output: &mut String) {
+        // TODO so, ideally, this wouldn't actually add attributes
+        // we'd generate some sort of js that modifies the code for this
+        match self {
+            Content::List(_list) => {
+                // TODO
+                todo!("generate something that actually updates this as needed")
+            }
+            Content::State(desc) => {
+                push_strs!(output => " coax-change-", &desc.state_id, "=\"innerHTML\"",);
+            }
+
+            // if this element has children, we don't consider it to be reactive, even if children are
+            Content::Children(_) => {}
+            _ => {}
+        }
+    }
+
+    pub(crate) fn render(&self, output: &mut String) {
         match self {
             Content::Empty => {}
             Content::Raw(raw) => output.push_str(raw),
@@ -88,7 +111,7 @@ impl Attributes {
         Self { list }
     }
 
-    pub fn render(&self, output: &mut String) {
+    pub(crate) fn render(&self, output: &mut String) {
         for (key, attr) in &self.list {
             output.push_str(key);
 

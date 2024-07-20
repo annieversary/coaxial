@@ -2,7 +2,7 @@ use axum::Router;
 use coaxial::{
     attrs, coaxial_adapter_script,
     context::Context,
-    html::{body, button, div, head, html, input, Attribute, Content},
+    html::{body, button, div, head, html, input, p, Attribute, Content},
     live::live,
     CoaxialResponse, Config,
 };
@@ -53,6 +53,7 @@ async fn counter(mut ctx: Context) -> CoaxialResponse {
                 Content::Text("-".to_string()),
                 attrs!("onclick" => Attribute::Closure(sub.into())),
             ),
+            p(Content::State(counter.into()), Default::default()),
         ]),
         Default::default(),
     );
