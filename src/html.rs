@@ -54,10 +54,11 @@ pub enum Content {
     // TODO this technically means we can have a vec![Text, Children(vec![Element, Element])]
     // which doesn't make sense, since it'd really be a vec![Text, Element, Element]
     // TODO change to Element
-    Children(Vec<Element>),
+    Element(Box<Element>),
     List(Vec<Content>),
     State(StateDescriptor),
 }
+
 impl Content {
     pub(crate) fn reactive_attributes(&self, output: &mut String) {
         // TODO so, ideally, this wouldn't actually add attributes
@@ -65,14 +66,11 @@ impl Content {
         match self {
             Content::List(_list) => {
                 // TODO
-                todo!("generate something that actually updates this as needed")
             }
             Content::State(desc) => {
                 push_strs!(output => " coax-change-", &desc.state_id, "=\"innerHTML\"",);
             }
 
-            // if this element has children, we don't consider it to be reactive, even if children are
-            Content::Children(_) => {}
             _ => {}
         }
     }
@@ -82,11 +80,7 @@ impl Content {
             Content::Empty => {}
             Content::Raw(raw) => output.push_str(raw),
             Content::Text(escaped) => output.push_str(&html_escape::encode_text(escaped)),
-            Content::Children(children) => {
-                for child in children {
-                    child.render(output);
-                }
-            }
+            Content::Element(child) => child.render(output),
             Content::List(list) => {
                 // TODO if the list contains a state
                 // add some code for updating this when state changes
@@ -98,6 +92,40 @@ impl Content {
             // TODO add some code for updating this when this changed
             Content::State(desc) => output.push_str(&desc.display),
         }
+    }
+}
+
+impl From<()> for Content {
+    fn from(_: ()) -> Self {
+        Self::Empty
+    }
+}
+impl From<String> for Content {
+    fn from(value: String) -> Self {
+        Self::Text(value)
+    }
+}
+impl<'a> From<&'a str> for Content {
+    fn from(value: &'a str) -> Self {
+        Self::Text(value.to_string())
+    }
+}
+impl From<Element> for Content {
+    fn from(element: Element) -> Self {
+        Self::Element(Box::new(element))
+    }
+}
+impl From<Vec<Content>> for Content {
+    fn from(value: Vec<Content>) -> Self {
+        Self::List(value)
+    }
+}
+impl<T> From<State<T>> for Content
+where
+    T: Clone + Display + Send + Sync + 'static,
+{
+    fn from(value: State<T>) -> Self {
+        Self::State(value.into())
     }
 }
 
@@ -154,11 +182,11 @@ impl Attributes {
 }
 
 pub enum Attribute {
+    Empty,
     Raw(String),
     Text(String),
     State(StateDescriptor),
     Closure(ClosureDescriptor),
-    Empty,
 }
 
 pub struct StateDescriptor {
@@ -188,12 +216,41 @@ impl From<Closure> for ClosureDescriptor {
     }
 }
 
+impl From<()> for Attribute {
+    fn from(_: ()) -> Self {
+        Self::Empty
+    }
+}
+impl From<String> for Attribute {
+    fn from(value: String) -> Self {
+        Self::Text(value)
+    }
+}
+impl<'a> From<&'a str> for Attribute {
+    fn from(value: &'a str) -> Self {
+        Self::Text(value.to_string())
+    }
+}
+impl From<Closure> for Attribute {
+    fn from(value: Closure) -> Self {
+        Self::Closure(value.into())
+    }
+}
+impl<T> From<State<T>> for Attribute
+where
+    T: Clone + Display + Send + Sync + 'static,
+{
+    fn from(value: State<T>) -> Self {
+        Self::State(value.into())
+    }
+}
+
 #[macro_export]
 macro_rules! attrs {
     ( $( $attr:expr => $value:expr ),* $(,)?) => {
         $crate::html::Attributes::new(
             // TODO this $value should have like. an Into or something
-            vec![$( ($attr.to_string(), $value), )*]
+            vec![$( ($attr.to_string(), $crate::html::Attribute::from($value)), )*]
         )
     };
 }
@@ -201,10 +258,10 @@ macro_rules! attrs {
 macro_rules! make_elements_funcs {
     ($($name:ident),* $(,)?) => {
         $(
-            pub fn $name(content: Content, attributes: Attributes) -> Element {
+            pub fn $name(content: impl Into<Content>, attributes: Attributes) -> Element {
                 Element {
                     name: stringify!($name).to_string(),
-                    content,
+                    content: content.into(),
                     attributes,
                 }
             }
@@ -247,17 +304,19 @@ mod tests {
     fn test_basic() {
         let el = Element {
             name: "div".to_string(),
-            content: Content::Children(vec![
+            content: Content::List(vec![
                 Element {
                     name: "p".to_string(),
                     content: Content::Text("hello".to_string()),
                     attributes: Default::default(),
-                },
+                }
+                .into(),
                 Element {
                     name: "p".to_string(),
                     content: Content::Text("world".to_string()),
                     attributes: Default::default(),
-                },
+                }
+                .into(),
             ]),
             attributes: Default::default(),
         };
@@ -271,10 +330,11 @@ mod tests {
     #[test]
     fn test_element_functions() {
         let el = div(
-            Content::Children(vec![p(
+            Content::List(vec![p(
                 Content::Text("hello".to_string()),
                 Default::default(),
-            )]),
+            )
+            .into()]),
             Default::default(),
         );
 

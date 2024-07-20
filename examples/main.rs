@@ -15,12 +15,13 @@ async fn main() {
         .layer(
             Config::with_layout(|content| {
                 html(
-                    Content::Children(vec![
-                        head(Content::Empty, Default::default()),
+                    Content::List(vec![
+                        head(Content::Empty, Default::default()).into(),
                         body(
-                            Content::Children(vec![content, coaxial_adapter_script()]),
+                            Content::List(vec![content.into(), coaxial_adapter_script().into()]),
                             Default::default(),
-                        ),
+                        )
+                        .into(),
                     ]),
                     Default::default(),
                 )
@@ -43,17 +44,11 @@ async fn counter(mut ctx: Context) -> CoaxialResponse {
     });
 
     let element = div(
-        Content::Children(vec![
-            input(attrs!("value" => Attribute::State(counter.into()))),
-            button(
-                Content::Text("+".to_string()),
-                attrs!("onclick" => Attribute::Closure(add.into())),
-            ),
-            button(
-                Content::Text("-".to_string()),
-                attrs!("onclick" => Attribute::Closure(sub.into())),
-            ),
-            p(Content::State(counter.into()), Default::default()),
+        Content::List(vec![
+            input(attrs!("value" => counter)).into(),
+            button("+", attrs!("onclick" => add)).into(),
+            button("-", attrs!("onclick" => sub)).into(),
+            p(counter, Default::default()).into(),
         ]),
         Default::default(),
     );

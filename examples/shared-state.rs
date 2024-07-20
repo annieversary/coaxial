@@ -4,7 +4,7 @@ use axum::{extract::State, Router};
 use coaxial::{
     attrs,
     context::Context,
-    html::{button, div, p, Attribute, Content},
+    html::{button, div, p, Content},
     live::live,
     CoaxialResponse,
 };
@@ -44,23 +44,13 @@ async fn counter(
     });
 
     ctx.with(div(
-        Content::Children(vec![
-            p(Content::State(counter.into()), Default::default()),
-            button(
-                Content::Text("+".to_string()),
-                attrs!("onclick" => Attribute::Closure(add.into())),
-            ),
-            button(
-                Content::Text("-".to_string()),
-                attrs!("onclick" => Attribute::Closure(sub.into())),
-            ),
+        Content::List(vec![
+            p(counter, Default::default()).into(),
+            button("+", attrs!("onclick" => add)).into(),
+            button("-", attrs!("onclick" => sub)).into(),
         ]),
         Default::default(),
     ))
-
-    // ctx.with(div(p(counter)
-    //     + button(("+", ("onclick", add)))
-    //     + button(("-", ("onclick", sub)))))
 }
 
 struct AppState {

@@ -46,12 +46,13 @@ impl Default for Config {
 
         Config::with_layout(|content| {
             html(
-                Content::Children(vec![
-                    head(Content::Empty, Default::default()),
+                Content::List(vec![
+                    head(Content::Empty, Default::default()).into(),
                     body(
-                        Content::Children(vec![content, coaxial_adapter_script()]),
+                        Content::List(vec![content.into(), coaxial_adapter_script().into()]),
                         Default::default(),
-                    ),
+                    )
+                    .into(),
                 ]),
                 Default::default(),
             )
