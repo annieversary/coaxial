@@ -8,7 +8,6 @@ use crate::{
     closure::{Closure, ClosureTrait, ClosureWrapper, IntoClosure},
     event_handlers::{EventHandler, EventHandlerWrapper},
     html::{Content, Element},
-    random_id,
     state::{AnyState, State, StateId, StateInner},
     CoaxialResponse, Output,
 };
@@ -34,7 +33,7 @@ impl<S> Context<S> {
         ClosureWrapper<I, P>: ClosureTrait<S>,
     {
         self.index += 1;
-        let id = random_id();
+        let id = format!("{}-{}", self.uuid, self.index);
 
         let closure: ClosureWrapper<I, P> = <I as IntoClosure<P, S>>::wrap(closure);
         self.closures.insert(id.clone(), Arc::new(closure));
@@ -122,7 +121,8 @@ impl<S> Default for Context<S> {
         let (changes_tx, changes_rx) = unbounded_channel();
 
         Self {
-            uuid: rand::random(),
+            // TODO this should not be random
+            uuid: 10000000,
             index: 0,
             state_owner: <SyncStorage as AnyStorage>::owner(),
             states: Default::default(),

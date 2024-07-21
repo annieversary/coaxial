@@ -38,7 +38,6 @@ async fn counter(mut ctx: Context) -> CoaxialResponse {
     let counter = ctx.use_state(0u32);
 
     let add = ctx.use_closure(move || async move {
-        println!("hye");
         counter.set(counter.get() + 1);
     });
     let sub = ctx.use_closure(move || async move {

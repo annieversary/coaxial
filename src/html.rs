@@ -1,5 +1,7 @@
 use std::fmt::Display;
 
+use rand::Rng;
+
 use crate::{closure::Closure, random_id, state::State};
 
 macro_rules! push_strs {
@@ -12,7 +14,7 @@ macro_rules! push_strs {
 
 #[derive(Debug, PartialEq, Eq)]
 pub struct Element {
-    pub(crate) id: String,
+    pub(crate) id: Option<String>,
     pub(crate) name: String,
     pub(crate) content: Content,
     pub(crate) attributes: Attributes,
@@ -21,6 +23,14 @@ pub struct Element {
 impl Element {
     pub(crate) fn optimize(&mut self) {
         self.content.optimize();
+    }
+
+    pub(crate) fn give_ids<RNG: Rng>(&mut self, rng: &mut RNG) {
+        if self.content.is_reactive() && self.id.is_none() {
+            self.id = Some(random_id(rng));
+        }
+
+        self.content.give_ids(rng);
     }
 
     pub(crate) fn render(&self, output: &mut String) {
@@ -38,8 +48,8 @@ impl Element {
             return;
         }
 
-        if self.content.is_reactive() {
-            push_strs!(output => " coax-id=\"", &self.id, "\"");
+        if let Some(id) = &self.id {
+            push_strs!(output => " coax-id=\"", id, "\"");
         }
 
         self.content.reactive_attributes(output);
@@ -139,6 +149,21 @@ impl Content {
     fn text_to_raw(&mut self) {
         if let Content::Text(string) = self {
             *self = Content::Raw(html_escape::encode_text(string).to_string());
+        }
+    }
+
+    pub(crate) fn give_ids<RNG: Rng>(&mut self, rng: &mut RNG) {
+        match self {
+            Content::List(list) => {
+                for item in list {
+                    item.give_ids(rng);
+                }
+            }
+            Content::Element(element) => element.give_ids(rng),
+            Content::State(_) => {}
+            Content::Empty => {}
+            Content::Raw(_) => {}
+            Content::Text(_) => {}
         }
     }
 
@@ -358,7 +383,7 @@ macro_rules! make_elements_funcs {
         $(
             pub fn $name(content: impl Into<Content>, attributes: Attributes) -> Element {
                 Element {
-                    id: random_id(),
+                    id: None,
                     name: stringify!($name).to_string(),
                     content: content.into(),
                     attributes,
@@ -380,7 +405,7 @@ macro_rules! make_void_elements {
         $(
             pub fn $name(attributes: Attributes) -> Element {
                 Element {
-                    id: random_id(),
+                    id: None,
                     name: stringify!($name).to_string(),
                     content: Content::Empty,
                     attributes,
@@ -398,23 +423,25 @@ pub(crate) const DOCTYPE_HTML: &str = "<!DOCTYPE html>";
 
 #[cfg(test)]
 mod tests {
+    use rand::rngs::mock::StepRng;
+
     use super::*;
 
     #[test]
     fn test_basic() {
         let el = Element {
-            id: "el1".to_string(),
+            id: Some("el1".to_string()),
             name: "div".to_string(),
             content: Content::List(vec![
                 Element {
-                    id: "el2".to_string(),
+                    id: Some("el2".to_string()),
                     name: "p".to_string(),
                     content: Content::Text("hello".to_string()),
                     attributes: Default::default(),
                 }
                 .into(),
                 Element {
-                    id: "el3".to_string(),
+                    id: None,
                     name: "p".to_string(),
                     content: Content::Text("world".to_string()),
                     attributes: Default::default(),
@@ -427,7 +454,10 @@ mod tests {
         let mut output = String::new();
         el.render(&mut output);
 
-        assert_eq!(output, "<div><p>hello</p><p>world</p></div>");
+        assert_eq!(
+            output,
+            "<div coax-id=\"el1\"><p coax-id=\"el2\">hello</p><p>world</p></div>"
+        );
     }
 
     #[test]
@@ -461,8 +491,8 @@ mod tests {
 
     #[test]
     fn test_reactive_elements_have_ids() {
-        let el = Element {
-            id: "element-id".to_string(),
+        let mut el = Element {
+            id: None,
             name: "div".to_string(),
             content: Content::State(StateDescriptor {
                 display: "value".to_string(),
@@ -472,48 +502,29 @@ mod tests {
             attributes: Default::default(),
         };
 
-        let mut output = String::new();
-        el.render(&mut output);
+        el.give_ids(&mut StepRng::new(0, 1));
 
         assert!(el.content.is_reactive());
-        assert_eq!(
-            output,
-            "<div coax-id=\"element-id\" coax-change-my_state=\"innerHTML\">value</div>"
-        );
+        assert!(el.id.is_some());
     }
 
     #[test]
     fn test_non_reactive_elements_dont_have_ids() {
-        let el = Element {
-            id: "element-id".to_string(),
+        let mut el = Element {
+            id: None,
             name: "div".to_string(),
             content: Content::Raw("value".to_string()),
             attributes: Default::default(),
         };
 
-        let mut output = String::new();
-        el.render(&mut output);
+        el.give_ids(&mut StepRng::new(0, 1));
 
         assert!(!el.content.is_reactive());
-        assert_eq!(output, "<div>value</div>");
+        assert!(el.id.is_none());
     }
 
-    // #[test]
-    // fn test_attributes() {
-    //     let el = div(("hello", vec![("hi".to_string(), "test".to_string())]));
-
-    //     assert_eq!(el.content, "<div hi=\"test\">hello</div>");
-    // }
-
-    // #[test]
-    // fn test_attributes_macro() {
-    //     let el = div(("hello", attrs![("hi", "test")]));
-
-    //     assert_eq!(el.content, "<div hi=\"test\">hello</div>");
-    // }
-
     #[test]
-    fn test_optimize_content() {
+    fn test_build_content() {
         macro_rules! run {
             ($provided:expr, $expect:expr) => {
                 let mut content = $provided;

@@ -5,6 +5,7 @@ use axum::response::Response;
 
 use context::Context;
 use html::Element;
+use rand::Rng;
 
 mod closure;
 pub mod config;
@@ -22,11 +23,10 @@ pub struct Output<S = ()> {
     context: Context<S>,
 }
 
-pub(crate) fn random_id() -> String {
-    use rand::{distributions::Alphanumeric, Rng};
+pub(crate) fn random_id<RNG: Rng>(rng: &mut RNG) -> String {
+    use rand::distributions::Alphanumeric;
 
-    rand::thread_rng()
-        .sample_iter(&Alphanumeric)
+    rng.sample_iter(&Alphanumeric)
         .take(8)
         .map(char::from)
         .collect()

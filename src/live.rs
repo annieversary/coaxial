@@ -10,6 +10,7 @@ use axum::{
     routing::{get, MethodRouter},
     Extension,
 };
+use rand::{rngs::StdRng, thread_rng, RngCore, SeedableRng};
 use tokio::select;
 use tokio_util::task::LocalPoolHandle;
 
@@ -39,20 +40,32 @@ where
                 .and_then(|v| v.to_str().ok())
                 == Some("websocket");
 
+            let rng_seed = {
+                let mut seed = <StdRng as SeedableRng>::Seed::default();
+                thread_rng().fill_bytes(&mut seed);
+                seed
+            };
+
             async move {
                 if !is_websocket {
                     let response = handler.call(request, state).await;
 
                     let (parts, body) = response.into_parts();
 
+                    let mut rng = StdRng::from_seed(rng_seed);
+
+                    let mut element = body.element;
+                    element.optimize();
+                    element.give_ids(&mut rng);
+
                     // TODO we will need to pass in like a bunch of stuff we'll get out of element
                     // like all of the element changing scripts
                     let adapter_script = body.context.adapter_script_element();
-                    let mut element = config.layout.call(body.element, adapter_script);
-                    element.optimize();
+                    let mut html = config.layout.call(element, adapter_script);
+                    html.optimize();
 
                     let mut output = String::from(DOCTYPE_HTML);
-                    element.render(&mut output);
+                    html.render(&mut output);
 
                     return axum::response::Response::from_parts(parts, Body::from(output));
                 }
