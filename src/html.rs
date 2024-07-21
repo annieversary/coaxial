@@ -25,8 +25,12 @@ impl Element {
         self.content.optimize();
     }
 
+    pub(crate) fn is_reactive(&self) -> bool {
+        self.content.is_reactive() || self.attributes.is_reactive()
+    }
+
     pub(crate) fn give_ids<RNG: Rng>(&mut self, rng: &mut RNG) {
-        if self.content.is_reactive() && self.id.is_none() {
+        if self.is_reactive() && self.id.is_none() {
             self.id = Some(random_id(rng));
         }
 
@@ -70,9 +74,6 @@ pub enum Content {
     Empty,
     Raw(String),
     Text(String),
-    // TODO this technically means we can have a vec![Text, Children(vec![Element, Element])]
-    // which doesn't make sense, since it'd really be a vec![Text, Element, Element]
-    // TODO change to Element
     Element(Box<Element>),
     List(Vec<Content>),
     State(StateDescriptor),
@@ -82,7 +83,6 @@ impl Content {
     /// Turns this Content into it's canonical form
     ///
     /// For example, a `Content::List` with an empty list will be transformed into a `Content::Empty`.
-    // TODO write tests for this
     pub(crate) fn optimize(&mut self) {
         match self {
             Content::Empty => {}
@@ -201,14 +201,10 @@ impl Content {
             Content::Text(escaped) => output.push_str(&html_escape::encode_text(escaped)),
             Content::Element(child) => child.render(output),
             Content::List(list) => {
-                // TODO if the list contains a state
-                // add some code for updating this when state changes
-                // since we will have to re-render it when the state updates
                 for content in list {
                     content.render(output);
                 }
             }
-            // TODO add some code for updating this when this changed
             Content::State(desc) => output.push_str(&desc.display),
         }
     }
@@ -256,6 +252,12 @@ pub struct Attributes {
 impl Attributes {
     pub fn new(list: Vec<(String, Attribute)>) -> Self {
         Self { list }
+    }
+
+    pub(crate) fn is_reactive(&self) -> bool {
+        self.list
+            .iter()
+            .any(|(_, attr)| Attribute::is_reactive(attr))
     }
 
     pub(crate) fn render(&self, output: &mut String) {
@@ -308,13 +310,26 @@ pub enum Attribute {
     Text(String),
     State(StateDescriptor),
     Closure(ClosureDescriptor),
+    // TODO we probably do want the ability to do lists here
+}
+
+impl Attribute {
+    pub(crate) fn is_reactive(&self) -> bool {
+        match self {
+            Attribute::Empty => false,
+            Attribute::Raw(_) => false,
+            Attribute::Text(_) => false,
+            Attribute::Closure(_) => false,
+
+            Attribute::State(_) => true,
+        }
+    }
 }
 
 #[derive(Debug, PartialEq, Eq)]
 pub struct StateDescriptor {
     display: String,
     state_id: String,
-    // TODO unsure what other fields we actually will want here
 }
 impl<T> From<State<T>> for StateDescriptor
 where
@@ -372,7 +387,6 @@ where
 macro_rules! attrs {
     ( $( $attr:expr => $value:expr ),* $(,)?) => {
         $crate::html::Attributes::new(
-            // TODO this $value should have like. an Into or something
             vec![$( ($attr.to_string(), $crate::html::Attribute::from($value)), )*]
         )
     };
