@@ -1,5 +1,6 @@
 use axum::response::Response;
 use generational_box::{AnyStorage, Owner, SyncStorage};
+use rand::{rngs::StdRng, Rng, SeedableRng};
 use serde::de::DeserializeOwned;
 use std::{collections::HashMap, fmt::Display, future::Future, sync::Arc};
 use tokio::sync::mpsc::{unbounded_channel, UnboundedReceiver, UnboundedSender};
@@ -8,6 +9,7 @@ use crate::{
     closure::{Closure, ClosureTrait, ClosureWrapper, IntoClosure},
     event_handlers::{EventHandler, EventHandlerWrapper},
     html::{Content, Element},
+    random_id,
     state::{AnyState, State, StateId, StateInner},
     CoaxialResponse, Output,
 };
@@ -15,6 +17,9 @@ use crate::{
 pub struct Context<S = ()> {
     uuid: u64,
     index: u64,
+
+    pub(crate) rng: StdRng,
+    rng_seed: u64,
 
     state_owner: Owner<SyncStorage>,
     pub(crate) states: HashMap<StateId, Arc<dyn AnyState>>,
@@ -26,6 +31,28 @@ pub struct Context<S = ()> {
 }
 
 impl<S> Context<S> {
+    pub(crate) fn new(seed: u64) -> Self {
+        let (changes_tx, changes_rx) = unbounded_channel();
+
+        let mut rng = StdRng::seed_from_u64(seed);
+
+        Self {
+            uuid: rng.gen(),
+            index: 0,
+
+            rng,
+            rng_seed: seed,
+
+            state_owner: <SyncStorage as AnyStorage>::owner(),
+            states: Default::default(),
+            closures: Default::default(),
+            event_handlers: Default::default(),
+
+            changes_rx,
+            changes_tx,
+        }
+    }
+
     pub fn use_closure<P, I>(&mut self, closure: I) -> Closure
     where
         I: IntoClosure<P, S> + Send + Sync + 'static,
@@ -33,7 +60,7 @@ impl<S> Context<S> {
         ClosureWrapper<I, P>: ClosureTrait<S>,
     {
         self.index += 1;
-        let id = format!("{}-{}", self.uuid, self.index);
+        let id = random_id(&mut self.rng);
 
         let closure: ClosureWrapper<I, P> = <I as IntoClosure<P, S>>::wrap(closure);
         self.closures.insert(id.clone(), Arc::new(closure));
@@ -87,7 +114,9 @@ impl<S> Context<S> {
 
     /// Returns an Element containing an HTML `<script>` tag containing the adapter JS code.
     pub(crate) fn adapter_script_element(&self) -> Element {
-        let mut script = include_str!("base.js").to_string();
+        let mut script = include_str!("base.js")
+            .to_string()
+            .replace("__internal__coaxialSeed", &self.rng_seed.to_string());
 
         for (name, handler) in &self.event_handlers {
             script.push_str("document.addEventListener('");
@@ -113,24 +142,5 @@ impl<S> Context<S> {
             Content::Raw(html_escape::encode_script(&script).to_string()),
             Default::default(),
         )
-    }
-}
-
-impl<S> Default for Context<S> {
-    fn default() -> Self {
-        let (changes_tx, changes_rx) = unbounded_channel();
-
-        Self {
-            // TODO this should not be random
-            uuid: 10000000,
-            index: 0,
-            state_owner: <SyncStorage as AnyStorage>::owner(),
-            states: Default::default(),
-            closures: Default::default(),
-            event_handlers: Default::default(),
-
-            changes_rx,
-            changes_tx,
-        }
     }
 }

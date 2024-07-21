@@ -1,22 +1,23 @@
-use std::sync::Arc;
+use std::{collections::HashMap, sync::Arc};
 
 use axum::{
     body::Body,
     extract::{
         ws::{Message, WebSocket},
-        FromRequestParts, Request, WebSocketUpgrade,
+        FromRequestParts, Query, Request, WebSocketUpgrade,
     },
     http::request::Parts,
     routing::{get, MethodRouter},
     Extension,
 };
-use rand::{rngs::StdRng, thread_rng, RngCore, SeedableRng};
+use rand::random;
 use tokio::select;
 use tokio_util::task::LocalPoolHandle;
 
 use crate::{
     closure::ClosureTrait,
     config::Config,
+    context::Context,
     event_handlers::EventHandler,
     handler::CoaxialHandler,
     html::DOCTYPE_HTML,
@@ -31,6 +32,7 @@ where
     get(
         |axum::extract::State(state): axum::extract::State<S>,
          config: Option<Extension<Config>>,
+         Query(query): Query<HashMap<String, String>>,
          request: Request| {
             let config = config.map(|c| c.0).unwrap_or_default();
 
@@ -40,23 +42,17 @@ where
                 .and_then(|v| v.to_str().ok())
                 == Some("websocket");
 
-            let rng_seed = {
-                let mut seed = <StdRng as SeedableRng>::Seed::default();
-                thread_rng().fill_bytes(&mut seed);
-                seed
-            };
-
             async move {
                 if !is_websocket {
-                    let response = handler.call(request, state).await;
+                    let rng_seed: u64 = random();
 
-                    let (parts, body) = response.into_parts();
+                    let response = handler.call(request, state, Context::new(rng_seed)).await;
 
-                    let mut rng = StdRng::from_seed(rng_seed);
+                    let (parts, mut body) = response.into_parts();
 
                     let mut element = body.element;
                     element.optimize();
-                    element.give_ids(&mut rng);
+                    element.give_ids(&mut body.context.rng);
 
                     // TODO we will need to pass in like a bunch of stuff we'll get out of element
                     // like all of the element changing scripts
@@ -77,7 +73,15 @@ where
                     .unwrap();
                 let request = Request::from_parts(parts, body);
 
-                let response = handler.call(request, state.clone()).await;
+                let rng_seed: u64 = query
+                    .get("coaxial-seed")
+                    .expect("coaxial-seed param was not present")
+                    .parse()
+                    .expect("seed is not a number");
+
+                let response = handler
+                    .call(request, state.clone(), Context::new(rng_seed))
+                    .await;
 
                 ws.on_upgrade(|mut socket: WebSocket| async move {
                     let (_parts, body) = response.into_parts();
@@ -114,7 +118,7 @@ where
                                 let mut updates = Vec::new();
                                 std::mem::swap(&mut changes, &mut updates);
 
-                                let updates = updates.into_iter().map(|(id, v)| (id.0, id.1, v)).collect::<Vec<_>>();
+                                let updates = updates.into_iter().map(|(id, v)| (id.to_string(), v)).collect::<Vec<_>>();
 
                                 let out = OutMessage::Update { fields: &updates };
                                 let msg = axum::extract::ws::Message::Text(serde_json::to_string(&out).unwrap());
@@ -206,5 +210,8 @@ enum InMessage {
 #[derive(serde::Serialize)]
 #[serde(tag = "t")]
 enum OutMessage<'a> {
-    Update { fields: &'a [(u64, u64, String)] },
+    Update {
+        /// (field, value)
+        fields: &'a [(String, String)],
+    },
 }

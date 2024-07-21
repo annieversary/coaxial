@@ -5,7 +5,7 @@ use crate::{context::Context, CoaxialResponse};
 
 pub trait CoaxialHandler<T, S>: Clone + Send + Sized + 'static {
     type Future: Future<Output = CoaxialResponse<S>> + Send + 'static;
-    fn call(self, req: Request, state: S) -> Self::Future;
+    fn call(self, req: Request, state: S, context: Context<S>) -> Self::Future;
 }
 
 // implement handler for the basic func that takes only the context
@@ -17,8 +17,8 @@ where
 {
     type Future = Pin<Box<dyn Future<Output = CoaxialResponse<S>> + Send>>;
 
-    fn call(self, _req: Request, _state: S) -> Self::Future {
-        Box::pin(async move { self(Context::default()).await })
+    fn call(self, _req: Request, _state: S, context: Context<S>) -> Self::Future {
+        Box::pin(async move { self(context).await })
     }
 }
 
@@ -37,7 +37,7 @@ macro_rules! impl_handler {
         {
             type Future = Pin<Box<dyn Future<Output = CoaxialResponse<S>> + Send>>;
 
-            fn call(self, req: Request, state: S) -> Self::Future {
+            fn call(self, req: Request, state: S, context: Context<S>) -> Self::Future {
                 Box::pin(async move {
                     let (mut parts, body) = req.into_parts();
                     let state = &state;
@@ -56,7 +56,7 @@ macro_rules! impl_handler {
                         Err(_rejection) => todo!("rejections aren't handled yet"),
                     };
 
-                    self(Context::default(), $($ty,)* $last,).await
+                    self(context, $($ty,)* $last,).await
                 })
             }
         }
