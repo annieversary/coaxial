@@ -11,7 +11,9 @@ class Coaxial {
             const msg = JSON.parse(e.data);
 
             if (msg.t === 'Update') {
-                for (const [field, value] of msg.fields) {
+                for (const [uuid, stateId, value] of msg.fields) {
+                    const field = `${uuid}-${stateId}`;
+
                     document.querySelectorAll(`[data-coaxial-id="${field}"]`).forEach(el => {
                         el.innerHTML = value;
                     });

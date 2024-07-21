@@ -14,8 +14,12 @@ use tokio::select;
 use tokio_util::task::LocalPoolHandle;
 
 use crate::{
-    closure::ClosureTrait, config::Config, event_handlers::EventHandler, handler::CoaxialHandler,
-    html::DOCTYPE_HTML, state::AnyState,
+    closure::ClosureTrait,
+    config::Config,
+    event_handlers::EventHandler,
+    handler::CoaxialHandler,
+    html::DOCTYPE_HTML,
+    state::{AnyState, StateId},
 };
 
 pub fn live<T, H, S>(handler: H) -> MethodRouter<S>
@@ -94,10 +98,14 @@ where
                                 };
                             }
                             _ = context.changes_rx.recv_many(&mut changes, 10000) => {
-                                let out = OutMessage::Update { fields: &changes };
+                                let mut updates = Vec::new();
+                                std::mem::swap(&mut changes, &mut updates);
+
+                                let updates = updates.into_iter().map(|(id, v)| (id.0, id.1, v)).collect::<Vec<_>>();
+
+                                let out = OutMessage::Update { fields: &updates };
                                 let msg = axum::extract::ws::Message::Text(serde_json::to_string(&out).unwrap());
                                 socket.send(msg).await.unwrap();
-                                changes.clear();
                             }
                         }
                     }
@@ -109,7 +117,7 @@ where
 
 type Closures<S> = std::collections::HashMap<String, Arc<dyn ClosureTrait<S>>>;
 type EventHandlers = std::collections::HashMap<String, Arc<dyn EventHandler>>;
-type States = std::collections::HashMap<u64, Arc<dyn AnyState>>;
+type States = std::collections::HashMap<StateId, Arc<dyn AnyState>>;
 
 enum SocketError {
     Fatal,
@@ -157,8 +165,8 @@ async fn handle_socket_message<S: Clone + Send + Sync + 'static>(
         InMessage::Set { id, value } => {
             // get the state and set it
             let Some(state) = states.get(&id) else {
-                // TODO maybe we should error here?
-                return Ok(());
+                // TODO maybe we should return an error here?
+                panic!("state not found");
             };
             state.set_value(value);
         }
@@ -178,12 +186,12 @@ enum InMessage {
         params: serde_json::Value,
     },
     Set {
-        id: u64,
+        id: StateId,
         value: serde_json::Value,
     },
 }
 #[derive(serde::Serialize)]
 #[serde(tag = "t")]
 enum OutMessage<'a> {
-    Update { fields: &'a [(u64, String)] },
+    Update { fields: &'a [(u64, u64, String)] },
 }

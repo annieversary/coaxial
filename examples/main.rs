@@ -38,6 +38,7 @@ async fn counter(mut ctx: Context) -> CoaxialResponse {
     let counter = ctx.use_state(0u32);
 
     let add = ctx.use_closure(move || async move {
+        println!("hye");
         counter.set(counter.get() + 1);
     });
     let sub = ctx.use_closure(move || async move {
@@ -50,8 +51,8 @@ async fn counter(mut ctx: Context) -> CoaxialResponse {
             button("+", attrs!("onclick" => add)).into(),
             button("-", attrs!("onclick" => sub)).into(),
             p(
-                Content::List(vec![counter.into(), " clicks".into()]),
-                // counter,
+                // Content::List(vec![counter.into(), " clicks".into()]),
+                counter,
                 Default::default(),
             )
             .into(),

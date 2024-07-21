@@ -8,7 +8,8 @@ use crate::{
     closure::{Closure, ClosureTrait, ClosureWrapper, IntoClosure},
     event_handlers::{EventHandler, EventHandlerWrapper},
     html::{Content, Element},
-    state::{AnyState, State, StateInner},
+    random_id,
+    state::{AnyState, State, StateId, StateInner},
     CoaxialResponse, Output,
 };
 
@@ -17,12 +18,12 @@ pub struct Context<S = ()> {
     index: u64,
 
     state_owner: Owner<SyncStorage>,
-    pub(crate) states: HashMap<u64, Arc<dyn AnyState>>,
+    pub(crate) states: HashMap<StateId, Arc<dyn AnyState>>,
     pub(crate) closures: HashMap<String, Arc<dyn ClosureTrait<S>>>,
     pub(crate) event_handlers: HashMap<String, Arc<dyn EventHandler>>,
 
-    pub(crate) changes_rx: UnboundedReceiver<(u64, String)>,
-    changes_tx: UnboundedSender<(u64, String)>,
+    pub(crate) changes_rx: UnboundedReceiver<(StateId, String)>,
+    changes_tx: UnboundedSender<(StateId, String)>,
 }
 
 impl<S> Context<S> {
@@ -33,7 +34,8 @@ impl<S> Context<S> {
         ClosureWrapper<I, P>: ClosureTrait<S>,
     {
         self.index += 1;
-        let id = format!("{}-{}", self.uuid, self.index);
+        let id = random_id();
+
         let closure: ClosureWrapper<I, P> = <I as IntoClosure<P, S>>::wrap(closure);
         self.closures.insert(id.clone(), Arc::new(closure));
 
@@ -55,7 +57,7 @@ impl<S> Context<S> {
                 #[cfg(any(debug_assertions, feature = "debug_ownership"))]
                 std::panic::Location::caller(),
             ),
-            id: self.index + self.uuid,
+            id: StateId(self.index, self.uuid),
         };
 
         self.states.insert(state.id, Arc::new(state.clone()));
@@ -120,8 +122,7 @@ impl<S> Default for Context<S> {
         let (changes_tx, changes_rx) = unbounded_channel();
 
         Self {
-            // TODO generate something random
-            uuid: 100000,
+            uuid: rand::random(),
             index: 0,
             state_owner: <SyncStorage as AnyStorage>::owner(),
             states: Default::default(),
