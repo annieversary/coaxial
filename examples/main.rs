@@ -1,10 +1,11 @@
 use axum::Router;
 use coaxial::{
-    attrs, coaxial_adapter_script,
+    attrs,
+    config::Config,
     context::Context,
     html::{body, button, div, head, html, input, p, Content},
     live::live,
-    CoaxialResponse, Config,
+    CoaxialResponse,
 };
 
 #[tokio::main]
@@ -13,12 +14,12 @@ async fn main() {
         .route("/", live(counter))
         // this following layer call is optional since this is the default, i'm adding it for documentation purposes
         .layer(
-            Config::with_layout(|content| {
+            Config::with_layout(|content, coaxial_adapter_script| {
                 html(
                     Content::List(vec![
                         head(Content::Empty, Default::default()).into(),
                         body(
-                            Content::List(vec![content.into(), coaxial_adapter_script().into()]),
+                            Content::List(vec![content.into(), coaxial_adapter_script.into()]),
                             Default::default(),
                         )
                         .into(),
@@ -50,6 +51,7 @@ async fn counter(mut ctx: Context) -> CoaxialResponse {
             button("-", attrs!("onclick" => sub)).into(),
             p(
                 Content::List(vec![counter.into(), " clicks".into()]),
+                // counter,
                 Default::default(),
             )
             .into(),

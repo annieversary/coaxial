@@ -7,7 +7,7 @@ use tokio::sync::mpsc::{unbounded_channel, UnboundedReceiver, UnboundedSender};
 use crate::{
     closure::{Closure, ClosureTrait, ClosureWrapper, IntoClosure},
     event_handlers::{EventHandler, EventHandlerWrapper},
-    html::Element,
+    html::{Content, Element},
     state::{AnyState, State, StateInner},
     CoaxialResponse, Output,
 };
@@ -82,6 +82,37 @@ impl<S> Context<S> {
             element,
             context: self,
         })
+    }
+
+    /// Returns an Element containing an HTML `<script>` tag containing the adapter JS code.
+    pub(crate) fn adapter_script_element(&self) -> Element {
+        let mut script = include_str!("base.js").to_string();
+
+        for (name, handler) in &self.event_handlers {
+            script.push_str("document.addEventListener('");
+            script.push_str(name);
+            script.push_str("', params=>{params={");
+
+            // NOTE: this serves two puposes:
+            // 1. events are big objects with lots of fields, so we only wanna send the ones we care about over the wire
+            // 2. serialization of events is wonky, and a lot of times fields are not set correctly
+            for field in handler.param_fields() {
+                script.push_str(field);
+                script.push_str(": params.");
+                script.push_str(field);
+                script.push(',');
+            }
+
+            script.push_str("};if (window.Coaxial) window.Coaxial.onEvent('");
+            script.push_str(name);
+            script.push_str("', params);});");
+        }
+
+        Element {
+            name: "script".to_string(),
+            content: Content::Raw(script),
+            attributes: Default::default(),
+        }
     }
 }
 

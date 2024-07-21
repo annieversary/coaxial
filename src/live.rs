@@ -14,8 +14,8 @@ use tokio::select;
 use tokio_util::task::LocalPoolHandle;
 
 use crate::{
-    closure::ClosureTrait, event_handlers::EventHandler, handler::CoaxialHandler,
-    html::DOCTYPE_HTML, state::AnyState, Config,
+    closure::ClosureTrait, config::Config, event_handlers::EventHandler, handler::CoaxialHandler,
+    html::DOCTYPE_HTML, state::AnyState,
 };
 
 pub fn live<T, H, S>(handler: H) -> MethodRouter<S>
@@ -41,36 +41,10 @@ where
 
                     let (parts, body) = response.into_parts();
 
-                    // add listeners for the registered event handlers
-                    let events = body.context.event_handlers;
-                    if !events.is_empty() {
-                        let mut script = String::new();
-
-                        for (name, handler) in events {
-                            script.push_str("document.addEventListener('");
-                            script.push_str(&name);
-                            script.push_str("', params=>{params={");
-
-                            // NOTE: this serves two puposes:
-                            // 1. events are big objects with lots of fields, so we only wanna send the ones we care about over the wire
-                            // 2. serialization of events is wonky, and a lot of times fields are not set correctly
-                            for field in handler.param_fields() {
-                                script.push_str(field);
-                                script.push_str(": params.");
-                                script.push_str(field);
-                                script.push(',');
-                            }
-
-                            script.push_str("};if (window.Coaxial) window.Coaxial.onEvent('");
-                            script.push_str(&name);
-                            script.push_str("', params);});");
-                        }
-
-                        // TODO add to the page
-                    }
-
-                    // TODO scripts should be passed here as a param actually
-                    let mut element = config.layout.call(body.element);
+                    // TODO we will need to pass in like a bunch of stuff we'll get out of element
+                    // like all of the element changing scripts
+                    let adapter_script = body.context.adapter_script_element();
+                    let mut element = config.layout.call(body.element, adapter_script);
                     element.optimize();
 
                     let mut output = String::from(DOCTYPE_HTML);
