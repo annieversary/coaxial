@@ -10,7 +10,7 @@ macro_rules! push_strs {
     };
 }
 
-#[derive(Default)]
+#[derive(Default, Debug, PartialEq, Eq)]
 pub struct Element {
     pub(crate) name: String,
     pub(crate) content: Content,
@@ -18,6 +18,10 @@ pub struct Element {
 }
 
 impl Element {
+    pub(crate) fn optimize(&mut self) {
+        self.content.optimize();
+    }
+
     pub(crate) fn render(&self, output: &mut String) {
         output.push('<');
         output.push_str(&self.name);
@@ -45,7 +49,7 @@ impl Element {
     }
 }
 
-#[derive(Default)]
+#[derive(Default, Debug, PartialEq, Eq)]
 pub enum Content {
     #[default]
     Empty,
@@ -60,13 +64,86 @@ pub enum Content {
 }
 
 impl Content {
+    /// Turns this Content into it's canonical form
+    ///
+    /// For example, a `Content::List` with an empty list will be transformed into a `Content::Empty`.
+    // TODO write tests for this
+    pub(crate) fn optimize(&mut self) {
+        match self {
+            Content::Empty => {}
+            Content::Raw(_) => {}
+            Content::Text(_) => {}
+            Content::State(_) => {}
+            Content::Element(element) => element.optimize(),
+            Content::List(list) => {
+                for item in list.iter_mut() {
+                    item.optimize();
+                }
+
+                match list.len() {
+                    0 => {
+                        // if the list is empty, change it for an empty
+                        *self = Content::Empty;
+                    }
+                    1 => {
+                        // if there is a single element in the list, promote it
+                        *self = list.remove(0);
+                    }
+                    _ => {
+                        Self::optimize_list(list);
+                        if list.is_empty() {
+                            *self = Content::Empty;
+                        } else if list.len() == 1 {
+                            *self = list.remove(0);
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    fn optimize_list(list: &mut Vec<Content>) {
+        // remove empty elements from a list before we process it
+        list.retain(|content| !matches!(content, Content::Empty));
+
+        // adjacent text contents should be merged, etc
+        let mut i = 0;
+        while i + 1 < list.len() {
+            if matches!(list[i], Content::Text(_) | Content::Raw(_))
+                && matches!(list[i + 1], Content::Text(_) | Content::Raw(_))
+            {
+                let mut next = list.remove(i + 1);
+
+                next.text_to_raw();
+                list[i].text_to_raw();
+
+                let Content::Raw(current) = &mut list[i] else {
+                    unreachable!();
+                };
+                let Content::Raw(next) = next else {
+                    unreachable!();
+                };
+
+                current.push_str(&next);
+            }
+
+            i += 1;
+        }
+    }
+
+    fn text_to_raw(&mut self) {
+        if let Content::Text(string) = self {
+            *self = Content::Raw(html_escape::encode_text(string).to_string());
+        }
+    }
+
     pub(crate) fn reactive_attributes(&self, output: &mut String) {
         // TODO so, ideally, this wouldn't actually add attributes
         // we'd generate some sort of js that modifies the code for this
+        // so like in here we actually give this element a data-something with a random string
+        // and generate the js that references that and contains the exact code to edit this
         match self {
-            Content::List(_list) => {
-                // TODO
-            }
+            Content::List(_list) => {}
             Content::State(desc) => {
                 push_strs!(output => " coax-change-", &desc.state_id, "=\"innerHTML\"",);
             }
@@ -129,7 +206,7 @@ where
     }
 }
 
-#[derive(Default)]
+#[derive(Default, Debug, PartialEq, Eq)]
 pub struct Attributes {
     list: Vec<(String, Attribute)>,
 }
@@ -181,7 +258,9 @@ impl Attributes {
     }
 }
 
+#[derive(Default, Debug, PartialEq, Eq)]
 pub enum Attribute {
+    #[default]
     Empty,
     Raw(String),
     Text(String),
@@ -189,6 +268,7 @@ pub enum Attribute {
     Closure(ClosureDescriptor),
 }
 
+#[derive(Default, Debug, PartialEq, Eq)]
 pub struct StateDescriptor {
     display: String,
     state_id: String,
@@ -205,6 +285,7 @@ where
         }
     }
 }
+#[derive(Default, Debug, PartialEq, Eq)]
 pub struct ClosureDescriptor {
     closure_id: String,
 }
@@ -369,4 +450,38 @@ mod tests {
 
     //     assert_eq!(el.content, "<div hi=\"test\">hello</div>");
     // }
+
+    #[test]
+    fn test_optimize_content() {
+        macro_rules! run {
+            ($provided:expr, $expect:expr) => {
+                let mut content = $provided;
+                content.optimize();
+
+                assert_eq!($expect, content);
+            };
+        }
+
+        run!(Content::List(vec![]), Content::Empty);
+        run!(
+            Content::List(vec![Content::Empty, Content::Empty, Content::Empty]),
+            Content::Empty
+        );
+        run!(
+            Content::List(vec![Content::List(vec![Content::List(vec![])])]),
+            Content::Empty
+        );
+        run!(
+            Content::List(vec![Content::Raw("hey".to_string())]),
+            Content::Raw("hey".to_string())
+        );
+        run!(
+            Content::List(vec![
+                Content::List(vec![Content::Raw("hey".to_string()),]),
+                Content::Empty,
+                Content::Text("hi".to_string())
+            ]),
+            Content::Raw("heyhi".to_string())
+        );
+    }
 }

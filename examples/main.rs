@@ -2,7 +2,7 @@ use axum::Router;
 use coaxial::{
     attrs, coaxial_adapter_script,
     context::Context,
-    html::{body, button, div, head, html, input, p, Attribute, Content},
+    html::{body, button, div, head, html, input, p, Content},
     live::live,
     CoaxialResponse, Config,
 };
@@ -48,7 +48,11 @@ async fn counter(mut ctx: Context) -> CoaxialResponse {
             input(attrs!("value" => counter)).into(),
             button("+", attrs!("onclick" => add)).into(),
             button("-", attrs!("onclick" => sub)).into(),
-            p(counter, Default::default()).into(),
+            p(
+                Content::List(vec![counter.into(), " clicks".into()]),
+                Default::default(),
+            )
+            .into(),
         ]),
         Default::default(),
     );

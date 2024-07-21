@@ -41,8 +41,6 @@ where
 
                     let (parts, body) = response.into_parts();
 
-                    let element = config.layout.call(body.element);
-
                     // add listeners for the registered event handlers
                     let events = body.context.event_handlers;
                     if !events.is_empty() {
@@ -70,6 +68,10 @@ where
 
                         // TODO add to the page
                     }
+
+                    // TODO scripts should be passed here as a param actually
+                    let mut element = config.layout.call(body.element);
+                    element.optimize();
 
                     let mut output = String::from(DOCTYPE_HTML);
                     element.render(&mut output);
