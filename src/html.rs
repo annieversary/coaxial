@@ -1,6 +1,6 @@
 use std::fmt::Display;
 
-use crate::{closure::Closure, state::State};
+use crate::{closure::Closure, random_id, state::State};
 
 macro_rules! push_strs {
     ( $output:ident => $($vals:expr),* $(,)? ) => {
@@ -10,8 +10,9 @@ macro_rules! push_strs {
     };
 }
 
-#[derive(Default, Debug, PartialEq, Eq)]
+#[derive(Debug, PartialEq, Eq)]
 pub struct Element {
+    pub(crate) id: String,
     pub(crate) name: String,
     pub(crate) content: Content,
     pub(crate) attributes: Attributes,
@@ -35,6 +36,10 @@ impl Element {
         if VOID_ELEMENTS.contains(&self.name.as_str()) {
             output.push_str(" />");
             return;
+        }
+
+        if self.content.is_reactive() {
+            push_strs!(output => " coax-id=\"", &self.id, "\"");
         }
 
         self.content.reactive_attributes(output);
@@ -134,6 +139,18 @@ impl Content {
     fn text_to_raw(&mut self) {
         if let Content::Text(string) = self {
             *self = Content::Raw(html_escape::encode_text(string).to_string());
+        }
+    }
+
+    pub(crate) fn is_reactive(&self) -> bool {
+        match self {
+            Content::List(list) => list.iter().any(Self::is_reactive),
+            Content::State(_) => true,
+
+            Content::Empty => false,
+            Content::Raw(_) => false,
+            Content::Text(_) => false,
+            Content::Element(_) => false,
         }
     }
 
@@ -268,7 +285,7 @@ pub enum Attribute {
     Closure(ClosureDescriptor),
 }
 
-#[derive(Default, Debug, PartialEq, Eq)]
+#[derive(Debug, PartialEq, Eq)]
 pub struct StateDescriptor {
     display: String,
     state_id: String,
@@ -285,7 +302,7 @@ where
         }
     }
 }
-#[derive(Default, Debug, PartialEq, Eq)]
+#[derive(Debug, PartialEq, Eq)]
 pub struct ClosureDescriptor {
     closure_id: String,
 }
@@ -341,6 +358,7 @@ macro_rules! make_elements_funcs {
         $(
             pub fn $name(content: impl Into<Content>, attributes: Attributes) -> Element {
                 Element {
+                    id: random_id(),
                     name: stringify!($name).to_string(),
                     content: content.into(),
                     attributes,
@@ -350,7 +368,7 @@ macro_rules! make_elements_funcs {
     };
 }
 
-make_elements_funcs!(div, html, head, body, p, a, button, section, aside, main,);
+make_elements_funcs!(div, html, head, body, p, a, button, section, aside, main, script);
 
 macro_rules! make_void_elements {
     ($($name:ident),* $(,)?) => {
@@ -362,6 +380,7 @@ macro_rules! make_void_elements {
         $(
             pub fn $name(attributes: Attributes) -> Element {
                 Element {
+                    id: random_id(),
                     name: stringify!($name).to_string(),
                     content: Content::Empty,
                     attributes,
@@ -384,15 +403,18 @@ mod tests {
     #[test]
     fn test_basic() {
         let el = Element {
+            id: "el1".to_string(),
             name: "div".to_string(),
             content: Content::List(vec![
                 Element {
+                    id: "el2".to_string(),
                     name: "p".to_string(),
                     content: Content::Text("hello".to_string()),
                     attributes: Default::default(),
                 }
                 .into(),
                 Element {
+                    id: "el3".to_string(),
                     name: "p".to_string(),
                     content: Content::Text("world".to_string()),
                     attributes: Default::default(),
@@ -435,6 +457,45 @@ mod tests {
         attrs.render(&mut output);
 
         assert_eq!(output, "onclick=\"hey\"");
+    }
+
+    #[test]
+    fn test_reactive_elements_have_ids() {
+        let el = Element {
+            id: "element-id".to_string(),
+            name: "div".to_string(),
+            content: Content::State(StateDescriptor {
+                display: "value".to_string(),
+                state_id: "my_state".to_string(),
+            }),
+
+            attributes: Default::default(),
+        };
+
+        let mut output = String::new();
+        el.render(&mut output);
+
+        assert!(el.content.is_reactive());
+        assert_eq!(
+            output,
+            "<div coax-id=\"element-id\" coax-change-my_state=\"innerHTML\">value</div>"
+        );
+    }
+
+    #[test]
+    fn test_non_reactive_elements_dont_have_ids() {
+        let el = Element {
+            id: "element-id".to_string(),
+            name: "div".to_string(),
+            content: Content::Raw("value".to_string()),
+            attributes: Default::default(),
+        };
+
+        let mut output = String::new();
+        el.render(&mut output);
+
+        assert!(!el.content.is_reactive());
+        assert_eq!(output, "<div>value</div>");
     }
 
     // #[test]

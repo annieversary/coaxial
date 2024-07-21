@@ -108,11 +108,10 @@ impl<S> Context<S> {
             script.push_str("', params);});");
         }
 
-        Element {
-            name: "script".to_string(),
-            content: Content::Raw(script),
-            attributes: Default::default(),
-        }
+        crate::html::script(
+            Content::Raw(html_escape::encode_script(&script).to_string()),
+            Default::default(),
+        )
     }
 }
 
