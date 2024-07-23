@@ -144,10 +144,11 @@ impl Content {
                                 text.push(content);
                             } else {
                                 group = Some(vec![content]);
+                                group_id += 1;
                             }
                         } else {
                             if let Some(group) = group.take() {
-                                groups.push((group, group_id));
+                                groups.push((group, group_id - 1));
                             }
                             group_id += 1;
 
@@ -157,6 +158,11 @@ impl Content {
                             // we can ignore everything else
                             // we could handle nested lists, but we can assume they've already been flattened
                         }
+                    }
+
+                    // last thing might be a text group, so we need to deal with that
+                    if let Some(group) = group.take() {
+                        groups.push((group, group_id - 1));
                     }
 
                     groups
