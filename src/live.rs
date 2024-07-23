@@ -54,9 +54,12 @@ where
                     element.optimize();
                     element.give_ids(&mut body.context.rng);
 
+                    let mut reactive_scripts = String::new();
+                    element.reactive_scripts(&mut reactive_scripts);
+
                     // TODO we will need to pass in like a bunch of stuff we'll get out of element
                     // like all of the element changing scripts
-                    let adapter_script = body.context.adapter_script_element();
+                    let adapter_script = body.context.adapter_script_element(&reactive_scripts);
                     let mut html = config.layout.call(element, adapter_script);
                     html.optimize();
 

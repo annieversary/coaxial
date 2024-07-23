@@ -3,7 +3,7 @@ use coaxial::{
     attrs,
     config::Config,
     context::Context,
-    html::{body, button, div, head, html, input, p, Content},
+    html::{body, button, div, head, html, input, p, strong, Content},
     live::live,
     CoaxialResponse,
 };
@@ -50,8 +50,12 @@ async fn counter(mut ctx: Context) -> CoaxialResponse {
             button("+", attrs!("onclick" => add)).into(),
             button("-", attrs!("onclick" => sub)).into(),
             p(
-                // Content::List(vec![counter.into(), " clicks".into()]),
-                counter,
+                Content::List(vec![
+                    counter.into(),
+                    " clicks.".into(),
+                    strong("Wow!", Default::default()).into(),
+                ]),
+                // counter,
                 Default::default(),
             )
             .into(),

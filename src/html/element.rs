@@ -56,8 +56,6 @@ impl Element {
             push_strs!(output => " coax-id=\"", id, "\"");
         }
 
-        self.content.reactive_attributes(output);
-
         output.push('>');
 
         self.content.render(output);
@@ -65,6 +63,10 @@ impl Element {
         output.push_str("</");
         output.push_str(&self.name);
         output.push('>');
+    }
+
+    pub(crate) fn reactive_scripts(&self, output: &mut String) {
+        self.content.reactive_scripts(output, self.id.as_deref())
     }
 
     pub fn attributes(&self) -> &Attributes {

@@ -1,17 +1,9 @@
-use std::fmt::Display;
+use std::fmt::{Display, Write};
 
 use crate::state::State;
 
 use super::{attribute::StateDescriptor, element::Element};
 use rand::Rng;
-
-macro_rules! push_strs {
-    ( $output:ident => $($vals:expr),* $(,)? ) => {
-        $(
-            $output.push_str($vals);
-        )*
-    };
-}
 
 #[derive(Default, Debug, PartialEq, Eq)]
 pub enum Content {
@@ -65,6 +57,8 @@ impl Content {
     fn optimize_list(list: &mut Vec<Content>) {
         // remove empty elements from a list before we process it
         list.retain(|content| !matches!(content, Content::Empty));
+
+        // TODO a list in a list should be flattened
 
         // adjacent text contents should be merged, etc
         let mut i = 0;
@@ -124,18 +118,131 @@ impl Content {
         }
     }
 
-    pub(crate) fn reactive_attributes(&self, output: &mut String) {
-        // TODO so, ideally, this wouldn't actually add attributes
-        // we'd generate some sort of js that modifies the code for this
-        // so like in here we actually give this element a data-something with a random string
-        // and generate the js that references that and contains the exact code to edit this
-        match self {
-            Content::List(_list) => {}
-            Content::State(desc) => {
-                push_strs!(output => " coax-change-", &desc.state_id, "=\"innerHTML\"",);
+    // TODO this function needs an exorcism
+    pub(crate) fn reactive_scripts(&self, output: &mut String, element_id: Option<&str>) {
+        match &self {
+            Content::List(list) => {
+                // so basically we wanna split it into groups of text/state and elements
+                // then, elements can be taken care by recursion
+                // and text/state groups can get a script that deals with this shit
+                // and its smth like onStateChange(desc.state_id, v => doc.querySelector(...).childNodes[position in list of groups].textContent = v)
+
+                let is_text = |content: &Content| -> bool {
+                    matches!(
+                        content,
+                        Content::Raw(_) | Content::Text(_) | Content::State(_)
+                    )
+                };
+
+                let groups = {
+                    let mut groups: Vec<(Vec<&Content>, u32)> = vec![];
+                    let mut group: Option<Vec<&Content>> = None;
+                    let mut group_id: u32 = 0;
+                    for content in list {
+                        if is_text(content) {
+                            if let Some(text) = &mut group {
+                                text.push(content);
+                            } else {
+                                group = Some(vec![content]);
+                            }
+                        } else {
+                            if let Some(group) = group.take() {
+                                groups.push((group, group_id));
+                            }
+                            group_id += 1;
+
+                            if let Content::Element(element) = content {
+                                element.reactive_scripts(output);
+                            }
+                            // we can ignore everything else
+                            // we could handle nested lists, but we can assume they've already been flattened
+                        }
+                    }
+
+                    groups
+                };
+
+                let Some(id) = element_id else { return };
+
+                // so, each group can hold multiple states
+                // we need to update them at the same time
+                for (group, group_id) in groups {
+                    output.push_str("window.Coaxial.onStateChange(['");
+
+                    let mut state_count = 0;
+                    for state_desc in group.iter().filter_map(|c| c.state()) {
+                        output.push_str(&state_desc.state_id);
+                        output.push_str("',");
+                        state_count += 1;
+                    }
+                    output.push_str("], (");
+
+                    for i in 0..state_count {
+                        output.push('v');
+                        output.push_str(&i.to_string());
+                        output.push(',');
+                    }
+
+                    output
+                        .write_fmt(format_args!(
+                            ") => {{ if (el = document.querySelector('[coax-id=\"{}\"]')) if (child = el.childNodes[{}]) child.textContent = [",
+                            id,
+                            group_id,
+                        ))
+                        .unwrap();
+
+                    state_count = 0;
+                    for item in group {
+                        match item {
+                            Content::Raw(text) => {
+                                output.push('\'');
+                                output.push_str(text);
+                                output.push('\'');
+                            }
+                            Content::Text(text) => {
+                                output.push('\'');
+                                output
+                                    .push_str(&html_escape::encode_script_single_quoted_text(text));
+                                output.push('\'');
+                            }
+                            Content::State(_) => {
+                                output.push('v');
+                                output.push_str(&state_count.to_string());
+
+                                state_count += 1;
+                            }
+                            _ => unreachable!(),
+                        }
+
+                        output.push(',');
+                    }
+
+                    output.push_str("].join(''); });");
+                }
             }
+            Content::State(desc) => {
+                let Some(id) = element_id else { return };
+
+                output
+                    .write_fmt(format_args!(
+                        // TODO we should probably have a function on coaxial that does this already
+                        "window.Coaxial.onStateChange('{}', v => {{ if (el = document.querySelector('[coax-id=\"{}\"]')) el.innerHTML = v.toString(); }});",
+                        desc.state_id,
+                        id,
+                    ))
+                    .unwrap();
+            }
+            Content::Element(element) => element.reactive_scripts(output),
 
             _ => {}
+        }
+    }
+
+    fn state(&self) -> Option<&StateDescriptor> {
+        if let Content::State(state) = self {
+            Some(state)
+        } else {
+            None
         }
     }
 
@@ -224,6 +331,33 @@ mod tests {
                 Content::Text("hi".to_string())
             ]),
             Content::Raw("heyhi".to_string())
+        );
+        // list in list should be flattened
+        run!(
+            Content::List(vec![
+                Content::List(vec![
+                    Content::State(StateDescriptor {
+                        display: Default::default(),
+                        state_id: Default::default()
+                    }),
+                    Content::Text("hey".to_string())
+                ]),
+                Content::State(StateDescriptor {
+                    display: Default::default(),
+                    state_id: Default::default()
+                })
+            ]),
+            Content::List(vec![
+                Content::State(StateDescriptor {
+                    display: Default::default(),
+                    state_id: Default::default()
+                }),
+                Content::Text("hey".to_string()),
+                Content::State(StateDescriptor {
+                    display: Default::default(),
+                    state_id: Default::default()
+                }),
+            ])
         );
     }
 }

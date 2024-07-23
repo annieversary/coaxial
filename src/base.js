@@ -1,6 +1,9 @@
 class Coaxial {
     constructor(seed = null) {
-        this.changeListeners = {};
+        // TODO prefill state with things
+        // idk where from
+        this.state = {};
+        this.stateChangeListeners = {};
 
         const url = new URL(window.location);
         if (seed) url.searchParams.append('coaxial-seed', seed);
@@ -15,9 +18,9 @@ class Coaxial {
 
             if (msg.t === 'Update') {
                 for (const [field, value] of msg.fields) {
-                    document.querySelectorAll(`[data-coaxial-id="${field}"]`).forEach(el => {
-                        el.innerHTML = value;
-                    });
+                    this.state[field] = value;
+
+                    // TODO delete this
                     document.querySelectorAll(`[coax-change-${field}]`).forEach(el => {
                         let name = el.getAttribute(`coax-change-${field}`);
                         el[name] = value;
@@ -57,23 +60,41 @@ class Coaxial {
     }
 
     /**
-     * @param {string} id
+     * Add a listener for a state.
+     * The listener will be called when the state is updated.
+     *
+     * @param {string|string[]} id
      * @param {(value: any) => void} id
      */
-    onChange(id, closure) {
-        if (this.changeListeners[id] === undefined) {
-            this.changeListeners = [closure];
+    onStateChange(id, closure) {
+        if (Array.isArray(id)) {
+            const ids = id;
+            // we call the closure with All of the states they need
+            for (const id of ids) {
+                this.onStateChange(id, v => {
+                    const params = ids.map(i => i === id ? v : this.state[i]);
+                    console.log(params);
+                    closure(params);
+                });
+            }
+
+            return;
+        }
+
+        if (this.stateChangeListeners[id] === undefined) {
+            this.stateChangeListeners[id] = [closure];
         } else {
-            this.changeListeners.push(closure);
+            this.stateChangeListeners[id].push(closure);
         }
     }
 
     callOnChange(id, value) {
-        if (this.changeListeners[id] === undefined) {
+        if (this.stateChangeListeners[id] === undefined) {
             return;
         }
 
-        for (const closure of this.changeListeners[id]) {
+        for (const closure of this.stateChangeListeners[id]) {
+            console.log('runing', value, id);
             closure(value);
         }
     }

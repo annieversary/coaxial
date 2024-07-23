@@ -2,7 +2,12 @@ use axum::response::Response;
 use generational_box::{AnyStorage, Owner, SyncStorage};
 use rand::{rngs::StdRng, Rng, SeedableRng};
 use serde::de::DeserializeOwned;
-use std::{collections::HashMap, fmt::Display, future::Future, sync::Arc};
+use std::{
+    collections::HashMap,
+    fmt::{Display, Write},
+    future::Future,
+    sync::Arc,
+};
 use tokio::sync::mpsc::{unbounded_channel, UnboundedReceiver, UnboundedSender};
 
 use crate::{
@@ -113,7 +118,7 @@ impl<S> Context<S> {
     }
 
     /// Returns an Element containing an HTML `<script>` tag containing the adapter JS code.
-    pub(crate) fn adapter_script_element(&self) -> Element {
+    pub(crate) fn adapter_script_element(&self, reactive_scripts: &str) -> Element {
         let mut script = include_str!("base.js")
             .to_string()
             .replace("__internal__coaxialSeed", &self.rng_seed.to_string());
@@ -137,6 +142,13 @@ impl<S> Context<S> {
             script.push_str(name);
             script.push_str("', params);});");
         }
+
+        script
+            .write_fmt(format_args!(
+                "document.addEventListener(\"DOMContentLoaded\", () => {{ {} }});",
+                reactive_scripts
+            ))
+            .unwrap();
 
         crate::html::script(
             Content::Raw(html_escape::encode_script(&script).to_string()),
