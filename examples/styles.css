@@ -1,0 +1,19 @@
+:root {
+
+}
+
+body {
+    font-family: sans-serif;
+    background: #ffd1dc;
+}
+
+.container {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+}
+
+.buttons {
+    display: flex;
+    gap: 1rem;
+}

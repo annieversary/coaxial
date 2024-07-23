@@ -23,7 +23,7 @@ class Coaxial {
                     // TODO delete this
                     document.querySelectorAll(`[coax-change-${field}]`).forEach(el => {
                         let name = el.getAttribute(`coax-change-${field}`);
-                        el[name] = value;
+                        el.setAttribute(name, value);
                     });
 
                     this.callOnChange(field, value);

@@ -3,7 +3,7 @@ use coaxial::{
     attrs,
     config::Config,
     context::Context,
-    html::{body, button, div, head, html, p, strong, Content},
+    html::{body, button, div, head, html, p, strong, style, Content},
     live::live,
     CoaxialResponse,
 };
@@ -17,7 +17,18 @@ async fn main() {
             Config::with_layout(|content, coaxial_adapter_script| {
                 html(
                     Content::List(vec![
-                        head(Content::Empty, Default::default()).into(),
+                        head(
+                            Content::List(vec![style(
+                                Content::Raw(
+                                    html_escape::encode_style(include_str!("styles.css"))
+                                        .to_string(),
+                                ),
+                                Default::default(),
+                            )
+                            .into()]),
+                            Default::default(),
+                        )
+                        .into(),
                         body(
                             Content::List(vec![content.into(), coaxial_adapter_script.into()]),
                             Default::default(),
@@ -53,9 +64,15 @@ async fn counter(mut ctx: Context) -> CoaxialResponse {
 
     let element = div(
         Content::List(vec![
-            button("+", attrs!("onclick" => add)).into(),
-            button("-", attrs!("onclick" => sub)).into(),
-            button("click", attrs!("onclick" => click)).into(),
+            div(
+                Content::List(vec![
+                    button("increment counter", attrs!("onclick" => add)).into(),
+                    button("decrement counter", attrs!("onclick" => sub)).into(),
+                    button("click for fun :3", attrs!("onclick" => click)).into(),
+                ]),
+                attrs!("class" => "buttons"),
+            )
+            .into(),
             p(
                 Content::List(vec![
                     "counter is ".into(),
@@ -77,7 +94,7 @@ async fn counter(mut ctx: Context) -> CoaxialResponse {
             )
             .into(),
         ]),
-        Default::default(),
+        attrs!("class" => "container"),
     );
 
     ctx.with(element)
