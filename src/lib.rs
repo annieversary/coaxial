@@ -16,6 +16,7 @@ mod helpers;
 pub mod html;
 pub mod live;
 mod state;
+mod reactive_js;
 
 pub type CoaxialResponse<S = ()> = Response<Output<S>>;
 pub struct Output<S = ()> {

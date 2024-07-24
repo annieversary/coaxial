@@ -1,6 +1,9 @@
-use std::fmt::{Display, Write};
+use std::fmt::Display;
 
-use crate::state::State;
+use crate::{
+    reactive_js::{Content as ReactiveContent, Reactivity, ReactivityDescriptor},
+    state::State,
+};
 
 use super::{attribute::StateDescriptor, element::Element};
 use rand::Rng;
@@ -119,7 +122,13 @@ impl Content {
     }
 
     // TODO this function needs an exorcism
-    pub(crate) fn reactive_scripts(&self, output: &mut String, element_id: Option<&str>) {
+    pub(crate) fn reactivity<'a, 'b>(
+        &'a self,
+        element_id: Option<&'a str>,
+        reactivity: &'b mut Reactivity<'a>,
+    ) where
+        'a: 'b,
+    {
         match &self {
             Content::List(list) => {
                 // so basically we wanna split it into groups of text/state and elements
@@ -134,111 +143,78 @@ impl Content {
                     )
                 };
 
-                let groups = {
-                    let mut groups: Vec<(Vec<&Content>, u32)> = vec![];
-                    let mut group: Option<Vec<&Content>> = None;
-                    let mut group_id: u32 = 0;
-                    for content in list {
-                        if is_text(content) {
-                            if let Some(text) = &mut group {
-                                text.push(content);
-                            } else {
-                                group = Some(vec![content]);
-                                group_id += 1;
-                            }
+                /// Add a group as a ReactiveDescriptor
+                fn add_group<'a, 'b>(
+                    reactivity: &'b mut Reactivity<'a>,
+                    group: Vec<&'a Content>,
+                    group_id: u32,
+                    element_id: Option<&'a str>,
+                ) where
+                    'a: 'b,
+                {
+                    let Some(id) = element_id else { return };
+
+                    let states = group.iter().filter_map(|c| c.state()).collect::<Vec<_>>();
+                    reactivity.add(ReactivityDescriptor {
+                        element_id: id,
+                        child_node_idx: Some(group_id ),
+                        content: group
+                            .iter()
+                            .map(|content| match content {
+                                Content::Raw(text) => ReactiveContent::Text(text.into()),
+                                Content::Text(text) => ReactiveContent::Text(
+                                    html_escape::encode_script_single_quoted_text(text),
+                                ),
+                                Content::State(descriptor) => ReactiveContent::Var(
+                                    states.iter().position(|s| *s == descriptor).expect("states always includes all the states that appear in the group"),
+                                ),
+                                _ => unreachable!("group only contains Raw, Text, and State"),
+                            })
+                            .collect(),
+                        state_descriptors: states,
+                    });
+                }
+
+                let mut group: Option<Vec<&Content>> = None;
+                let mut group_id: u32 = 0;
+                for content in list {
+                    if is_text(content) {
+                        if let Some(text) = &mut group {
+                            text.push(content);
                         } else {
-                            if let Some(group) = group.take() {
-                                groups.push((group, group_id - 1));
-                            }
+                            group = Some(vec![content]);
                             group_id += 1;
-
-                            if let Content::Element(element) = content {
-                                element.reactive_scripts(output);
-                            }
-                            // we can ignore everything else
-                            // we could handle nested lists, but we can assume they've already been flattened
                         }
-                    }
-
-                    // last thing might be a text group, so we need to deal with that
-                    if let Some(group) = group.take() {
-                        groups.push((group, group_id - 1));
-                    }
-
-                    groups
-                };
-
-                let Some(id) = element_id else { return };
-
-                // so, each group can hold multiple states
-                // we need to update them at the same time
-                for (group, group_id) in groups {
-                    output.push_str("window.Coaxial.onStateChange(['");
-
-                    let mut state_count = 0;
-                    for state_desc in group.iter().filter_map(|c| c.state()) {
-                        output.push_str(&state_desc.state_id);
-                        output.push_str("',");
-                        state_count += 1;
-                    }
-                    output.push_str("], (");
-
-                    for i in 0..state_count {
-                        output.push('v');
-                        output.push_str(&i.to_string());
-                        output.push(',');
-                    }
-
-                    output
-                        .write_fmt(format_args!(
-                            ") => {{ if (el = document.querySelector('[coax-id=\"{}\"]')) if (child = el.childNodes[{}]) child.textContent = [",
-                            id,
-                            group_id,
-                        ))
-                        .unwrap();
-
-                    state_count = 0;
-                    for item in group {
-                        match item {
-                            Content::Raw(text) => {
-                                output.push('\'');
-                                output.push_str(text);
-                                output.push('\'');
-                            }
-                            Content::Text(text) => {
-                                output.push('\'');
-                                output
-                                    .push_str(&html_escape::encode_script_single_quoted_text(text));
-                                output.push('\'');
-                            }
-                            Content::State(_) => {
-                                output.push('v');
-                                output.push_str(&state_count.to_string());
-
-                                state_count += 1;
-                            }
-                            _ => unreachable!(),
+                    } else {
+                        if let Some(group) = group.take() {
+                            add_group(reactivity, group, group_id - 1, element_id);
                         }
+                        group_id += 1;
 
-                        output.push(',');
+                        if let Content::Element(element) = content {
+                            element.reactivity(reactivity);
+                        }
+                        // we can ignore everything else
+                        // we could handle nested lists, but we can assume they've already been flattened
                     }
+                }
 
-                    output.push_str("].join(''); });");
+                // last thing might be a text group, so we need to deal with that
+                if let Some(group) = group.take() {
+                    add_group(reactivity, group, group_id - 1, element_id);
                 }
             }
             Content::State(desc) => {
                 let Some(id) = element_id else { return };
 
-                output
-                    .write_fmt(format_args!(
-                        // TODO we should probably have a function on coaxial that does this already
-                        "window.Coaxial.onStateChange('{}', v => {{ if (el = document.querySelector('[coax-id=\"{}\"]')) el.innerHTML = v.toString(); }});",
-                        desc.state_id,
-                        id,
-                    ))
-                    .unwrap();
+                reactivity.add(ReactivityDescriptor {
+                    element_id: id,
+                    child_node_idx: None,
+                    state_descriptors: vec![&desc],
+                    content: vec![ReactiveContent::Var(0)],
+                });
             }
-            Content::Element(element) => element.reactive_scripts(output),
+            Content::Element(element) => element.reactivity(reactivity),
 
             _ => {}
         }

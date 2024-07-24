@@ -1,6 +1,6 @@
 use rand::Rng;
 
-use crate::random_id;
+use crate::{random_id, reactive_js::Reactivity};
 
 use super::{Attributes, Content, VOID_ELEMENTS};
 
@@ -65,8 +65,11 @@ impl Element {
         output.push('>');
     }
 
-    pub(crate) fn reactive_scripts(&self, output: &mut String) {
-        self.content.reactive_scripts(output, self.id.as_deref())
+    pub(crate) fn reactivity<'a, 'b>(&'a self, reactivity: &'b mut Reactivity<'a>)
+    where
+        'a: 'b,
+    {
+        self.content.reactivity(self.id.as_deref(), reactivity)
     }
 
     pub fn attributes(&self) -> &Attributes {

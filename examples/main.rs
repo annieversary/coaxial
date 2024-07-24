@@ -79,7 +79,9 @@ async fn counter(mut ctx: Context) -> CoaxialResponse {
                     counter.into(),
                     ". ".into(),
                     strong("Wow!", Default::default()).into(),
-                    " ".into(),
+                    "counter is ".into(),
+                    counter.into(),
+                    " and there are ".into(),
                     clicks.into(),
                     " total clicks. ".into(),
                     strong(

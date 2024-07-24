@@ -21,6 +21,7 @@ use crate::{
     event_handlers::EventHandler,
     handler::CoaxialHandler,
     html::DOCTYPE_HTML,
+    reactive_js::Reactivity,
     state::{AnyState, StateId},
 };
 
@@ -54,11 +55,12 @@ where
                     element.optimize();
                     element.give_ids(&mut body.context.rng);
 
-                    let mut reactive_scripts = String::new();
-                    element.reactive_scripts(&mut reactive_scripts);
+                    let reactive_scripts = {
+                        let mut reactivity = Reactivity::default();
+                        element.reactivity(&mut reactivity);
+                        reactivity.script()
+                    };
 
-                    // TODO we will need to pass in like a bunch of stuff we'll get out of element
-                    // like all of the element changing scripts
                     let adapter_script = body.context.adapter_script_element(&reactive_scripts);
                     let mut html = config.layout.call(element, adapter_script);
                     html.optimize();
