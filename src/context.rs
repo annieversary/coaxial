@@ -156,3 +156,36 @@ impl<S> Context<S> {
         )
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_u32_state_in_closures() {
+        let mut ctx = Context::<()>::new(0);
+
+        let state = ctx.use_state(0u32);
+
+        ctx.use_closure(move || async move {
+            state.set(1);
+        });
+
+        // TODO run the closure. assert that it gets set to the correct thing
+    }
+
+    #[test]
+    fn test_string_state_in_closures() {
+        let mut ctx = Context::<()>::new(0);
+
+        let _state = ctx.use_state("my string".to_string());
+
+        // ctx.use_closure(move || async move {
+        //     _state.set("other string".to_string());
+        // });
+
+        panic!("this fails to compile");
+
+        // TODO run the closure. assert that it gets set to the correct thing
+    }
+}
