@@ -59,10 +59,29 @@ impl Content {
     }
 
     fn optimize_list(list: &mut Vec<Content>) {
+        // TODO this function might be more efficient if we roll all steps into one loop
+
+        // a list in a list should be flattened
+        let mut i = 0;
+        while i + 1 < list.len() {
+            if matches!(list[i], Content::List(_)) {
+                let mut inner = Content::Empty;
+                std::mem::swap(&mut inner, &mut list[i]);
+
+                let Content::List(inner) = inner else {
+                    unreachable!()
+                };
+
+                list.splice(i..i, inner);
+            } else {
+                // if we just spliced a list in, we want to keep going from the same index
+                // otherwise, we advance the index and keep going
+                i += 1;
+            }
+        }
+
         // remove empty elements from a list before we process it
         list.retain(|content| !matches!(content, Content::Empty));
-
-        // TODO a list in a list should be flattened
 
         // adjacent text contents should be merged, etc
         let mut i = 0;
