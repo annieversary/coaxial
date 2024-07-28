@@ -58,6 +58,7 @@ impl<S> Context<S> {
         }
     }
 
+    #[track_caller]
     pub fn use_closure<P, I>(&mut self, closure: I) -> Closure
     where
         I: IntoClosure<P, S> + Send + Sync + 'static,
@@ -71,7 +72,11 @@ impl<S> Context<S> {
 
         Closure {
             id,
-            closure_call_tx: self.closure_call_tx.clone(),
+            closure_call_tx: self.state_owner.insert_with_caller(
+                self.closure_call_tx.clone(),
+                #[cfg(any(debug_assertions, feature = "debug_ownership"))]
+                std::panic::Location::caller(),
+            ),
         }
     }
 

@@ -53,13 +53,9 @@ async fn counter(mut ctx: Context) -> CoaxialResponse {
         clicks.set(clicks.get() + 1);
     });
 
-    let c = click.clone();
-    let add = ctx.use_closure(move || {
-        let click = c.clone();
-        async move {
-            counter.set(counter.get() + 1);
-            click.call();
-        }
+    let add = ctx.use_closure(move || async move {
+        counter.set(counter.get() + 1);
+        click.call();
     });
     let sub = ctx.use_closure(move || async move {
         counter.set(counter.get() - 1);
