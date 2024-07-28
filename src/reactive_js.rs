@@ -160,7 +160,7 @@ pub(crate) struct ElementAttributeReactivityDescriptor<'a> {
 }
 impl<'a> ElementAttributeReactivityDescriptor<'a> {
     fn script(&self, output: &mut String) {
-        // TODO this doesn't deal with the onchange=window.Coaxial.setValue thing
+        // TODO this doesn't deal with the onchange=window.Coaxial.setState thing
         // when key is value or checked
         // i think we want that to be on attributes?
         // like we generate a new separate attribute

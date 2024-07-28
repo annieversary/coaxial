@@ -37,12 +37,13 @@ class Coaxial {
         });
     }
 
-    setValue(id, value) {
+    setState(id, value) {
         this.send({
-            t: 'Set',
+            t: 'SetState',
             id,
             value
         });
+        // if we want the setState to be "predictive", we can set the state here and run the listeners
     }
 
     onEvent(name, params) {

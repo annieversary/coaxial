@@ -205,7 +205,7 @@ async fn handle_socket_message<S: Clone + Send + Sync + 'static>(
             let event = event.clone();
             pool.spawn_pinned(move || event.call(params)).await.unwrap();
         }
-        InMessage::Set { id, value } => {
+        InMessage::SetState { id, value } => {
             // get the state and set it
             let Some(state) = states.get(&id) else {
                 // TODO maybe we should return an error here?
@@ -228,8 +228,7 @@ enum InMessage {
         name: String,
         params: serde_json::Value,
     },
-    // TODO rename to SetState
-    Set {
+    SetState {
         id: RandomId,
         value: serde_json::Value,
     },

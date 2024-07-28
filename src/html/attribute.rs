@@ -47,7 +47,7 @@ impl Attribute {
 
                 // if key == "value" || key == "checked" {
                 //     push_strs!(output =>
-                //         "\" onchange=\"window.Coaxial.setValue(",
+                //         "\" onchange=\"window.Coaxial.setState(",
                 //         &desc.state_id, ", ['", key, "'])"
                 //     );
                 // }
