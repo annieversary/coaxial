@@ -15,7 +15,7 @@ use crate::{
     event_handlers::{EventHandler, EventHandlerWrapper},
     html::{Content, Element},
     random_id::RandomId,
-    state::{AnyState, State, StateId, StateInner},
+    state::{AnyState, State, StateInner},
     CoaxialResponse, Output,
 };
 
@@ -27,13 +27,13 @@ pub struct Context<S = ()> {
     rng_seed: u64,
 
     state_owner: Owner<SyncStorage>,
-    pub(crate) states: HashMap<StateId, Arc<dyn AnyState>>,
+    pub(crate) states: HashMap<RandomId, Arc<dyn AnyState>>,
     // TODO we might want to change closures to have RandomIds as keys
     pub(crate) closures: HashMap<String, Arc<dyn ClosureTrait<S>>>,
     pub(crate) event_handlers: HashMap<String, Arc<dyn EventHandler>>,
 
-    pub(crate) changes_rx: UnboundedReceiver<(StateId, String)>,
-    changes_tx: UnboundedSender<(StateId, String)>,
+    pub(crate) changes_rx: UnboundedReceiver<(RandomId, String)>,
+    changes_tx: UnboundedSender<(RandomId, String)>,
 
     pub(crate) closure_call_rx: UnboundedReceiver<Closure>,
     closure_call_tx: UnboundedSender<Closure>,
@@ -89,6 +89,8 @@ impl<S> Context<S> {
         value: T,
     ) -> State<T> {
         self.index += 1;
+
+        let id = RandomId::from_rng(&mut self.rng);
         let state = State {
             inner: self.state_owner.insert_with_caller(
                 StateInner {
@@ -98,7 +100,7 @@ impl<S> Context<S> {
                 #[cfg(any(debug_assertions, feature = "debug_ownership"))]
                 std::panic::Location::caller(),
             ),
-            id: StateId(self.index, self.uuid),
+            id,
         };
 
         self.states.insert(state.id, Arc::new(state));

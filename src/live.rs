@@ -21,8 +21,9 @@ use crate::{
     event_handlers::EventHandler,
     handler::CoaxialHandler,
     html::DOCTYPE_HTML,
+    random_id::RandomId,
     reactive_js::Reactivity,
-    state::{AnyState, StateId},
+    state::AnyState,
 };
 
 pub fn live<T, H, S>(handler: H) -> MethodRouter<S>
@@ -159,7 +160,7 @@ where
 }
 
 type EventHandlers = std::collections::HashMap<String, Arc<dyn EventHandler>>;
-type States = std::collections::HashMap<StateId, Arc<dyn AnyState>>;
+type States = std::collections::HashMap<RandomId, Arc<dyn AnyState>>;
 
 enum SocketError {
     Fatal,
@@ -228,7 +229,7 @@ enum InMessage {
         params: serde_json::Value,
     },
     Set {
-        id: StateId,
+        id: RandomId,
         value: serde_json::Value,
     },
 }
