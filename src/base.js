@@ -1,7 +1,5 @@
 class Coaxial {
     constructor(seed = null) {
-        // TODO prefill state with things
-        // idk where from
         this.state = {};
         this.stateChangeListeners = {};
 

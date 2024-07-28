@@ -1,6 +1,6 @@
 use std::{borrow::Cow, collections::HashMap, fmt::Write};
 
-use crate::html::StateDescriptor;
+use crate::{html::StateDescriptor, random_id::RandomId};
 
 #[derive(Default)]
 pub(crate) struct Reactivity<'a> {
@@ -61,7 +61,7 @@ impl<'a> Reactivity<'a> {
 fn on_state_change(
     output: &mut String,
     state_descriptors: &[&'_ StateDescriptor],
-    element_id: &str,
+    element_id: RandomId,
 ) {
     output.push_str("window.Coaxial.onStateChange(['");
 
@@ -88,13 +88,13 @@ fn on_state_change(
     }
 
     output.push_str(") => { if (el = document.querySelector('[coax-id=\"");
-    output.push_str(element_id);
+    element_id.fmt(output).unwrap();
     output.push_str("\"]')) ");
 }
 
 pub(crate) struct ElementContentReactivityDescriptor<'a> {
     /// Coaxial Id of the element this descriptor applies to
-    pub(crate) element_id: &'a str,
+    pub(crate) element_id: RandomId,
     /// Index of `childNodes` to change in this descriptor.
     /// If None, this descriptor applies to the full element.
     pub(crate) child_node_idx: Option<u32>,
@@ -151,7 +151,7 @@ impl<'a> Content<'a> {
 
 pub(crate) struct ElementAttributeReactivityDescriptor<'a> {
     /// Coaxial Id of the element this descriptor applies to
-    pub(crate) element_id: &'a str,
+    pub(crate) element_id: RandomId,
 
     pub(crate) attribute_key: &'a str,
 
@@ -202,7 +202,7 @@ mod tests {
             state_id: "state1".to_string(),
         };
         let desc = ElementContentReactivityDescriptor {
-            element_id: "el_id",
+            element_id: RandomId::from_str("aaaabbbb"),
             child_node_idx: None,
             state_descriptors: vec![&state_desc],
             content: vec![Content::Var(0)],
@@ -211,7 +211,7 @@ mod tests {
         let mut output = String::new();
         desc.script(&mut output);
 
-        assert_eq!("window.Coaxial.onStateChange(['state1'], (v0) => { if (el = document.querySelector('[coax-id=\"el_id\"]')) el.textContent = v0; });\n", output);
+        assert_eq!("window.Coaxial.onStateChange(['state1'], (v0) => { if (el = document.querySelector('[coax-id=\"aaaabbbb\"]')) el.textContent = v0; });\n", output);
     }
 
     #[test]
@@ -221,7 +221,7 @@ mod tests {
             state_id: "state1".to_string(),
         };
         let desc = ElementContentReactivityDescriptor {
-            element_id: "el_id",
+            element_id: RandomId::from_str("aaaabbbb"),
             child_node_idx: Some(22),
             state_descriptors: vec![&state_desc],
             content: vec![Content::Text("hey".into())],
@@ -230,7 +230,7 @@ mod tests {
         let mut output = String::new();
         desc.script(&mut output);
 
-        assert_eq!("window.Coaxial.onStateChange(['state1'], (v0) => { if (el = document.querySelector('[coax-id=\"el_id\"]')) if (el = el.childNodes[22]) el.textContent = 'hey'; });\n", output);
+        assert_eq!("window.Coaxial.onStateChange(['state1'], (v0) => { if (el = document.querySelector('[coax-id=\"aaaabbbb\"]')) if (el = el.childNodes[22]) el.textContent = 'hey'; });\n", output);
     }
 
     #[test]
@@ -240,7 +240,7 @@ mod tests {
             state_id: "state1".to_string(),
         };
         let desc = ElementContentReactivityDescriptor {
-            element_id: "el_id",
+            element_id: RandomId::from_str("aaaabbbb"),
             child_node_idx: None,
             state_descriptors: vec![&state_desc],
             content: vec![
@@ -253,7 +253,7 @@ mod tests {
         let mut output = String::new();
         desc.script(&mut output);
 
-        assert_eq!("window.Coaxial.onStateChange(['state1'], (v0) => { if (el = document.querySelector('[coax-id=\"el_id\"]')) el.textContent = ['hey',v0,'world'].join(''); });\n", output);
+        assert_eq!("window.Coaxial.onStateChange(['state1'], (v0) => { if (el = document.querySelector('[coax-id=\"aaaabbbb\"]')) el.textContent = ['hey',v0,'world'].join(''); });\n", output);
     }
 
     #[test]
@@ -267,7 +267,7 @@ mod tests {
             state_id: "state2".to_string(),
         };
         let desc = ElementContentReactivityDescriptor {
-            element_id: "el_id",
+            element_id: RandomId::from_str("aaaabbbb"),
             child_node_idx: None,
             state_descriptors: vec![&state_desc_1, &state_desc_2],
             content: vec![
@@ -284,6 +284,6 @@ mod tests {
         let mut output = String::new();
         desc.script(&mut output);
 
-        assert_eq!("window.Coaxial.onStateChange(['state1','state2'], (v0,v1) => { if (el = document.querySelector('[coax-id=\"el_id\"]')) el.textContent = [v1,'um',v0,'wow',v1,v0,v1].join(''); });\n", output);
+        assert_eq!("window.Coaxial.onStateChange(['state1','state2'], (v0,v1) => { if (el = document.querySelector('[coax-id=\"aaaabbbb\"]')) el.textContent = [v1,'um',v0,'wow',v1,v0,v1].join(''); });\n", output);
     }
 }

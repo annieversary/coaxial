@@ -14,7 +14,7 @@ use crate::{
     closure::{Closure, ClosureTrait, ClosureWrapper, IntoClosure},
     event_handlers::{EventHandler, EventHandlerWrapper},
     html::{Content, Element},
-    random_id,
+    random_id::RandomId,
     state::{AnyState, State, StateId, StateInner},
     CoaxialResponse, Output,
 };
@@ -28,6 +28,7 @@ pub struct Context<S = ()> {
 
     state_owner: Owner<SyncStorage>,
     pub(crate) states: HashMap<StateId, Arc<dyn AnyState>>,
+    // TODO we might want to change closures to have RandomIds as keys
     pub(crate) closures: HashMap<String, Arc<dyn ClosureTrait<S>>>,
     pub(crate) event_handlers: HashMap<String, Arc<dyn EventHandler>>,
 
@@ -71,10 +72,10 @@ impl<S> Context<S> {
         ClosureWrapper<I, P>: ClosureTrait<S>,
     {
         self.index += 1;
-        let id = random_id(&mut self.rng);
+        let id = RandomId::from_rng(&mut self.rng);
 
         let closure: ClosureWrapper<I, P> = <I as IntoClosure<P, S>>::wrap(closure);
-        self.closures.insert(id.clone(), Arc::new(closure));
+        self.closures.insert(id.to_string(), Arc::new(closure));
 
         Closure {
             id,

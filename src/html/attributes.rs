@@ -1,4 +1,4 @@
-use crate::reactive_js::Reactivity;
+use crate::{random_id::RandomId, reactive_js::Reactivity};
 
 use super::Attribute;
 
@@ -40,7 +40,7 @@ impl Attributes {
 
     pub(crate) fn reactivity<'a, 'b>(
         &'a self,
-        element_id: Option<&'a str>,
+        element_id: Option<RandomId>,
         reactivity: &'b mut Reactivity<'a>,
     ) where
         'a: 'b,

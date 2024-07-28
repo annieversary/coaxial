@@ -2,11 +2,13 @@ use axum::{extract::FromRequestParts, http::request::Parts};
 use std::{collections::HashMap, future::Future, marker::PhantomData, pin::Pin, sync::Arc};
 use tokio::sync::mpsc::UnboundedSender;
 
+use crate::random_id::RandomId;
+
 pub(crate) type Closures<S> = HashMap<String, Arc<dyn ClosureTrait<S>>>;
 
 #[derive(Clone)]
 pub struct Closure {
-    pub(crate) id: String,
+    pub(crate) id: RandomId,
     pub(crate) closure_call_tx: UnboundedSender<Self>,
 }
 

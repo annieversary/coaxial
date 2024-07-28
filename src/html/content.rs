@@ -1,6 +1,7 @@
 use std::fmt::Display;
 
 use crate::{
+    random_id::RandomId,
     reactive_js::{Content as ReactiveContent, ElementContentReactivityDescriptor, Reactivity},
     state::State,
 };
@@ -124,7 +125,7 @@ impl Content {
     // TODO this function needs an exorcism
     pub(crate) fn reactivity<'a, 'b>(
         &'a self,
-        element_id: Option<&'a str>,
+        element_id: Option<RandomId>,
         reactivity: &'b mut Reactivity<'a>,
     ) where
         'a: 'b,
@@ -148,7 +149,7 @@ impl Content {
                     reactivity: &'b mut Reactivity<'a>,
                     group: Vec<&'a Content>,
                     group_id: u32,
-                    element_id: Option<&'a str>,
+                    element_id: Option<RandomId>,
                 ) where
                     'a: 'b,
                 {

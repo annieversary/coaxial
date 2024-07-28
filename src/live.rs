@@ -138,7 +138,7 @@ where
                                 std::mem::swap(&mut closures, &mut closure_calls);
 
                                 for closure in  &closures {
-                                    let Some(closure) = context.closures.get(&closure.id) else {
+                                    let Some(closure) = context.closures.get(&closure.id.to_string()) else {
                                         // this is a fatal error
                                         return;
                                     };

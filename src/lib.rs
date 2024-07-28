@@ -5,7 +5,6 @@ use axum::response::Response;
 
 use context::Context;
 use html::Element;
-use rand::Rng;
 
 mod closure;
 pub mod config;
@@ -15,6 +14,7 @@ mod handler;
 mod helpers;
 pub mod html;
 pub mod live;
+mod random_id;
 mod reactive_js;
 mod state;
 
@@ -23,17 +23,3 @@ pub struct Output<S = ()> {
     element: Element,
     context: Context<S>,
 }
-
-pub(crate) fn random_id<RNG: Rng>(rng: &mut RNG) -> String {
-    use rand::distributions::Alphanumeric;
-
-    rng.sample_iter(&Alphanumeric)
-        .take(8)
-        .map(char::from)
-        .collect()
-}
-
-// TODO make RandomId into a type
-// it should contain a [u8; 8]
-// and then has a to_string
-// then closure can use that, and implement both copy and clone

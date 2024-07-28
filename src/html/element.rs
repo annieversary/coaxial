@@ -1,20 +1,12 @@
 use rand::Rng;
 
-use crate::{random_id, reactive_js::Reactivity};
+use crate::{random_id::RandomId, reactive_js::Reactivity};
 
 use super::{Attributes, Content, VOID_ELEMENTS};
 
-macro_rules! push_strs {
-    ( $output:ident => $($vals:expr),* $(,)? ) => {
-        $(
-            $output.push_str($vals);
-        )*
-    };
-}
-
 #[derive(Debug, PartialEq, Eq)]
 pub struct Element {
-    pub(crate) id: Option<String>,
+    pub(crate) id: Option<RandomId>,
     pub(crate) name: String,
     pub(crate) content: Content,
     pub(crate) attributes: Attributes,
@@ -31,7 +23,7 @@ impl Element {
 
     pub(crate) fn give_ids<RNG: Rng>(&mut self, rng: &mut RNG) {
         if self.is_reactive() && self.id.is_none() {
-            self.id = Some(random_id(rng));
+            self.id = Some(RandomId::from_rng(rng));
         }
 
         self.content.give_ids(rng);
@@ -53,7 +45,9 @@ impl Element {
         }
 
         if let Some(id) = &self.id {
-            push_strs!(output => " coax-id=\"", id, "\"");
+            output.push_str(" coax-id=\"");
+            id.fmt(output).unwrap();
+            output.push('\"');
         }
 
         output.push('>');
@@ -69,8 +63,8 @@ impl Element {
     where
         'a: 'b,
     {
-        self.content.reactivity(self.id.as_deref(), reactivity);
-        self.attributes.reactivity(self.id.as_deref(), reactivity);
+        self.content.reactivity(self.id, reactivity);
+        self.attributes.reactivity(self.id, reactivity);
     }
 
     pub fn attributes(&self) -> &Attributes {
@@ -89,11 +83,11 @@ mod tests {
     #[test]
     fn test_basic() {
         let el = Element {
-            id: Some("el1".to_string()),
+            id: Some(RandomId::from_str("aaaabbbb")),
             name: "div".to_string(),
             content: Content::List(vec![
                 Element {
-                    id: Some("el2".to_string()),
+                    id: Some(RandomId::from_str("ccccdddd")),
                     name: "p".to_string(),
                     content: Content::Text("hello".to_string()),
                     attributes: Default::default(),
@@ -115,7 +109,7 @@ mod tests {
 
         assert_eq!(
             output,
-            "<div coax-id=\"el1\"><p coax-id=\"el2\">hello</p><p>world</p></div>"
+            "<div coax-id=\"aaaabbbb\"><p coax-id=\"ccccdddd\">hello</p><p>world</p></div>"
         );
     }
 

@@ -2,6 +2,7 @@ use std::fmt::Display;
 
 use crate::{
     closure::Closure,
+    random_id::RandomId,
     reactive_js::{Content, ElementAttributeReactivityDescriptor, Reactivity},
     state::State,
 };
@@ -53,7 +54,7 @@ impl Attribute {
             }
             Attribute::Closure(desc) => {
                 output.push_str("window.Coaxial.callClosure('");
-                output.push_str(&desc.closure_id);
+                desc.closure_id.fmt(output).unwrap();
                 output.push_str("')");
             }
             Attribute::Empty => {}
@@ -62,7 +63,7 @@ impl Attribute {
 
     pub(crate) fn reactivity<'a, 'b>(
         &'a self,
-        element_id: Option<&'a str>,
+        element_id: Option<RandomId>,
         key: &'a str,
         reactivity: &'b mut Reactivity<'a>,
     ) where
@@ -116,7 +117,7 @@ where
 }
 #[derive(Debug, PartialEq, Eq)]
 pub struct ClosureDescriptor {
-    pub(crate) closure_id: String,
+    pub(crate) closure_id: RandomId,
 }
 impl From<Closure> for ClosureDescriptor {
     fn from(value: Closure) -> Self {
