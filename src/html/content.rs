@@ -16,8 +16,8 @@ pub enum Content {
     Raw(String),
     Text(String),
     Element(Box<Element>),
-    List(Vec<Content>),
     State(StateDescriptor),
+    List(Vec<Content>),
 }
 
 impl Content {

@@ -53,12 +53,10 @@ impl Attributes {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
-
     #[test]
     fn test_can_render_one_attribute() {
         let attrs = attrs!(
-            "hi" => Attribute::Text("hey".to_string()),
+            "hi" => "hey",
         );
 
         let mut output = String::new();
@@ -71,8 +69,8 @@ mod tests {
     #[test]
     fn test_can_render_multiple_attributes() {
         let attrs = attrs!(
-            "onclick" => Attribute::Text("hey".to_string()),
-            "data-something" => Attribute::Text("wow".to_string()),
+            "onclick" => "hey",
+            "data-something" => "wow",
         );
 
         let mut output = String::new();

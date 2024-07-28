@@ -11,34 +11,65 @@ use crate::{
 pub enum Attribute {
     #[default]
     Empty,
-    Raw(String),
-    Text(String),
-    State(StateDescriptor),
-    Closure(ClosureDescriptor),
-    // TODO we probably do want the ability to do lists here
+    Value(AttributeValue),
 }
 
 impl Attribute {
     pub(crate) fn is_reactive(&self) -> bool {
         match self {
             Attribute::Empty => false,
-            Attribute::Raw(_) => false,
-            Attribute::Text(_) => false,
-            Attribute::Closure(_) => false,
-
-            Attribute::State(_) => true,
+            Attribute::Value(value) => value.is_reactive(),
         }
     }
 
     pub(crate) fn render(&self, output: &mut String) {
         match self {
-            Attribute::Raw(text) => output.push_str(text),
-            Attribute::Text(text) => {
-                output.push_str(&html_escape::encode_double_quoted_attribute(text))
-            }
+            Attribute::Empty => {}
+            Attribute::Value(value) => value.render(output),
+        }
+    }
+
+    pub(crate) fn reactivity<'a, 'b>(
+        &'a self,
+        element_id: Option<RandomId>,
+        key: &'a str,
+        reactivity: &'b mut Reactivity<'a>,
+    ) where
+        'a: 'b,
+    {
+        match self {
+            Self::Empty => {}
+            Self::Value(value) => value.reactivity(element_id, key, reactivity),
+        }
+    }
+}
+
+#[derive(Debug, PartialEq, Eq)]
+pub enum AttributeValue {
+    Raw(String),
+    Text(String),
+    State(StateDescriptor),
+    Closure(ClosureDescriptor),
+}
+
+impl AttributeValue {
+    pub(crate) fn is_reactive(&self) -> bool {
+        match self {
+            Self::Raw(_) => false,
+            Self::Text(_) => false,
+            Self::Closure(_) => false,
+
+            Self::State(_) => true,
+        }
+    }
+
+    pub(crate) fn render(&self, output: &mut String) {
+        match self {
+            Self::Raw(text) => output.push_str(text),
+            Self::Text(text) => output.push_str(&html_escape::encode_double_quoted_attribute(text)),
             // TODO this needs to include something that updates it
             // probably outside of it, as generated code
-            Attribute::State(desc) => {
+            Self::State(desc) => {
                 output.push_str(&desc.display);
 
                 // push_strs!(output =>
@@ -52,12 +83,11 @@ impl Attribute {
                 //     );
                 // }
             }
-            Attribute::Closure(desc) => {
+            Self::Closure(desc) => {
                 output.push_str("window.Coaxial.callClosure('");
                 desc.closure_id.fmt(output).unwrap();
                 output.push_str("')");
             }
-            Attribute::Empty => {}
         }
     }
 
@@ -77,10 +107,9 @@ impl Attribute {
         // im thinking that someone could do like a (data-function => closure), and then try to run said closure from their own js
 
         match self {
-            Attribute::Empty => {}
-            Attribute::Raw(_) => {}
-            Attribute::Text(_) => {}
-            Attribute::State(state_descriptor) => {
+            Self::Raw(_) => {}
+            Self::Text(_) => {}
+            Self::State(state_descriptor) => {
                 let Some(element_id) = element_id else { return };
 
                 reactivity.add_element_attribute(ElementAttributeReactivityDescriptor {
@@ -91,7 +120,7 @@ impl Attribute {
                     content: vec![Content::Var(0)],
                 });
             }
-            Attribute::Closure(_) => {
+            Self::Closure(_) => {
                 // TODO i dont know if we want to do something here, or if we should stay with rendering the
                 // `window.Coaxial.callClosure(...)`
             }
@@ -134,17 +163,17 @@ impl From<()> for Attribute {
 }
 impl From<String> for Attribute {
     fn from(value: String) -> Self {
-        Self::Text(value)
+        Self::Value(AttributeValue::Text(value))
     }
 }
 impl<'a> From<&'a str> for Attribute {
     fn from(value: &'a str) -> Self {
-        Self::Text(value.to_string())
+        Self::Value(AttributeValue::Text(value.to_string()))
     }
 }
 impl From<Closure> for Attribute {
     fn from(value: Closure) -> Self {
-        Self::Closure(value.into())
+        Self::Value(AttributeValue::Closure(value.into()))
     }
 }
 impl<T> From<State<T>> for Attribute
@@ -152,6 +181,6 @@ where
     T: Clone + Display + Send + Sync + 'static,
 {
     fn from(value: State<T>) -> Self {
-        Self::State(value.into())
+        Self::Value(AttributeValue::State(value.into()))
     }
 }
