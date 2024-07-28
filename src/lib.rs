@@ -32,3 +32,8 @@ pub(crate) fn random_id<RNG: Rng>(rng: &mut RNG) -> String {
         .map(char::from)
         .collect()
 }
+
+// TODO make RandomId into a type
+// it should contain a [u8; 8]
+// and then has a to_string
+// then closure can use that, and implement both copy and clone

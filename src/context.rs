@@ -33,11 +33,15 @@ pub struct Context<S = ()> {
 
     pub(crate) changes_rx: UnboundedReceiver<(StateId, String)>,
     changes_tx: UnboundedSender<(StateId, String)>,
+
+    pub(crate) closure_call_rx: UnboundedReceiver<Closure>,
+    closure_call_tx: UnboundedSender<Closure>,
 }
 
 impl<S> Context<S> {
     pub(crate) fn new(seed: u64) -> Self {
         let (changes_tx, changes_rx) = unbounded_channel();
+        let (closure_call_tx, closure_call_rx) = unbounded_channel();
 
         let mut rng = StdRng::seed_from_u64(seed);
 
@@ -55,6 +59,8 @@ impl<S> Context<S> {
 
             changes_rx,
             changes_tx,
+            closure_call_rx,
+            closure_call_tx,
         }
     }
 
@@ -70,7 +76,10 @@ impl<S> Context<S> {
         let closure: ClosureWrapper<I, P> = <I as IntoClosure<P, S>>::wrap(closure);
         self.closures.insert(id.clone(), Arc::new(closure));
 
-        Closure { id }
+        Closure {
+            id,
+            closure_call_tx: self.closure_call_tx.clone(),
+        }
     }
 
     #[track_caller]
@@ -185,5 +194,7 @@ mod tests {
         });
 
         // TODO run the closure. assert that it gets set to the correct thing
+        // we will need a way to call the closure directly, without the having the websocket connection set up
+        // probably by passing in an empty state and a default Parts as a test
     }
 }

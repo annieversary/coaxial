@@ -1,6 +1,8 @@
 use generational_box::{GenerationalBox, SyncStorage};
-use serde::de::DeserializeOwned;
-use serde::{de, Deserialize, Deserializer};
+use serde::{
+    de::{self, DeserializeOwned},
+    Deserialize, Deserializer,
+};
 use std::{fmt::Display, str::FromStr};
 use tokio::sync::mpsc::UnboundedSender;
 

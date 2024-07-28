@@ -1,11 +1,26 @@
-use std::{future::Future, marker::PhantomData, pin::Pin};
-
 use axum::{extract::FromRequestParts, http::request::Parts};
+use std::{collections::HashMap, future::Future, marker::PhantomData, pin::Pin, sync::Arc};
+use tokio::sync::mpsc::UnboundedSender;
 
+pub(crate) type Closures<S> = HashMap<String, Arc<dyn ClosureTrait<S>>>;
+
+#[derive(Clone)]
 pub struct Closure {
     pub(crate) id: String,
+    pub(crate) closure_call_tx: UnboundedSender<Self>,
 }
 
+impl Closure {
+    /// Queues the function to be run
+    ///
+    /// Note: this doesn't call the closure immediately.
+    /// Keep in mind, the closure will not be run until the websocket connection has been established.
+    pub fn call(&self) {
+        self.closure_call_tx.send(self.clone()).unwrap();
+    }
+}
+
+/// Trait used to type-erase all closures, so they can be stored in the same HashMap
 pub trait ClosureTrait<S>: Send + Sync {
     fn call<'a>(&'a self, parts: Parts, state: S) -> Pin<Box<dyn Future<Output = ()> + 'a>>;
 }
@@ -52,6 +67,7 @@ macro_rules! impl_closure_trait {
     };
 }
 
+/// Wrapper type that actually implements `ClosureTrait`
 pub struct ClosureWrapper<T, P> {
     func: T,
     _phantom: PhantomData<P>,

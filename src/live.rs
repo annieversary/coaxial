@@ -15,7 +15,7 @@ use tokio::select;
 use tokio_util::task::LocalPoolHandle;
 
 use crate::{
-    closure::ClosureTrait,
+    closure::{Closure, Closures},
     config::Config,
     context::Context,
     event_handlers::EventHandler,
@@ -84,6 +84,8 @@ where
                     .parse()
                     .expect("seed is not a number");
 
+                // TODO ideally, we'll store the context in a HashMap after the initial request,
+                // which allows us to not re-run the handler here
                 let response = handler
                     .call(request, state.clone(), Context::new(rng_seed))
                     .await;
@@ -93,7 +95,9 @@ where
 
                     let mut context = body.context;
                     let pool = LocalPoolHandle::new(5);
+
                     let mut changes = Vec::new();
+                    let mut closure_calls = Vec::new();
 
                     loop {
                         select! {
@@ -129,6 +133,23 @@ where
                                 let msg = axum::extract::ws::Message::Text(serde_json::to_string(&out).unwrap());
                                 socket.send(msg).await.unwrap();
                             }
+                            _ = context.closure_call_rx.recv_many(&mut closure_calls, 10000) => {
+                                let mut closures: Vec<Closure> = Vec::new();
+                                std::mem::swap(&mut closures, &mut closure_calls);
+
+                                for closure in  &closures {
+                                    let Some(closure) = context.closures.get(&closure.id) else {
+                                        // this is a fatal error
+                                        return;
+                                    };
+
+                                    let closure = closure.clone();
+                                    let parts = request_parts.clone();
+                                    let state = state.clone();
+                                    let closure = move || async move { closure.call(parts, state).await };
+                                    pool.spawn_pinned(closure).await.unwrap();
+                                }
+                            }
                         }
                     }
                 })
@@ -137,7 +158,6 @@ where
     )
 }
 
-type Closures<S> = std::collections::HashMap<String, Arc<dyn ClosureTrait<S>>>;
 type EventHandlers = std::collections::HashMap<String, Arc<dyn EventHandler>>;
 type States = std::collections::HashMap<StateId, Arc<dyn AnyState>>;
 
