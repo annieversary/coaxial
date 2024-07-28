@@ -6,26 +6,30 @@ use std::{
 use rand::{distributions::Alphanumeric, Rng};
 use serde::{de::Deserializer, Deserialize};
 
+const RANDOM_ID_LENGTH: usize = 8;
+
 #[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub struct RandomId([u8; 8]);
+pub struct RandomId([u8; RANDOM_ID_LENGTH]);
 
 impl RandomId {
     pub fn from_rng<RNG: Rng>(rng: &mut RNG) -> Self {
-        let array = [(); 8].map(|_| rng.sample(Alphanumeric));
+        let array = [(); RANDOM_ID_LENGTH].map(|_| rng.sample(Alphanumeric));
 
         Self(array)
     }
 
     #[allow(dead_code)]
     pub(crate) fn from_str(string: &str) -> Self {
-        let array: [u8; 8] = string.as_bytes()[..8]
-            .try_into()
-            .expect("provided string was less than 8 characters long");
-        Self(array)
+        Self::try_from_str(string).unwrap_or_else(|_| {
+            panic!(
+                "provided string was less than {} characters long",
+                RANDOM_ID_LENGTH
+            )
+        })
     }
 
     pub(crate) fn try_from_str(string: &str) -> Result<Self, TryFromSliceError> {
-        let array: [u8; 8] = string.as_bytes()[..8].try_into()?;
+        let array: [u8; RANDOM_ID_LENGTH] = string.as_bytes()[..RANDOM_ID_LENGTH].try_into()?;
         Ok(Self(array))
     }
 
@@ -69,7 +73,11 @@ impl<'de> Deserialize<'de> for RandomId {
             type Value = RandomId;
 
             fn expecting(&self, formatter: &mut std::fmt::Formatter) -> std::fmt::Result {
-                write!(formatter, "a string no more than 8 bytes long")
+                write!(
+                    formatter,
+                    "a string no more than {} bytes long",
+                    RANDOM_ID_LENGTH
+                )
             }
 
             fn visit_str<E>(self, v: &str) -> Result<Self::Value, E>
