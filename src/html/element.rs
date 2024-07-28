@@ -15,7 +15,7 @@ pub struct Element {
 impl Element {
     pub(crate) fn optimize(&mut self) {
         self.content.optimize();
-        // TODO self.attributes.optimize();
+        self.attributes.optimize();
     }
 
     pub(crate) fn is_reactive(&self) -> bool {

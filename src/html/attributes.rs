@@ -20,6 +20,12 @@ impl Attributes {
             .any(|(_, attr)| Attribute::is_reactive(attr))
     }
 
+    pub(crate) fn optimize(&mut self) {
+        for (_, value) in &mut self.list {
+            value.optimize();
+        }
+    }
+
     pub(crate) fn render(&self, output: &mut String) {
         for (i, (key, attr)) in self.list.iter().enumerate() {
             output.push_str(key);

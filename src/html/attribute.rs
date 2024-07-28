@@ -24,6 +24,66 @@ impl Attribute {
         }
     }
 
+    pub(crate) fn optimize(&mut self) {
+        match self {
+            Self::List(list) => {
+                match list.len() {
+                    0 => {
+                        // if the list is empty, change it for an empty
+                        *self = Self::Empty;
+                    }
+                    1 => {
+                        // if there is a single element in the list, promote it
+                        *self = Self::Value(list.remove(0));
+                    }
+                    _ => {
+                        Self::optimize_list(list);
+                        if list.is_empty() {
+                            *self = Self::Empty;
+                        } else if list.len() == 1 {
+                            *self = Self::Value(list.remove(0));
+                        }
+                    }
+                }
+            }
+
+            Self::Empty => {}
+            Self::Value(AttributeValue::Raw(_)) => {}
+            Self::Value(AttributeValue::Text(_)) => {}
+            Self::Value(AttributeValue::State(_)) => {}
+            Self::Value(AttributeValue::Closure(_)) => {}
+        }
+    }
+
+    fn optimize_list(list: &mut Vec<AttributeValue>) {
+        // adjacent text contents should be merged, etc
+        let mut i = 0;
+        while i + 1 < list.len() {
+            if matches!(list[i], AttributeValue::Text(_) | AttributeValue::Raw(_))
+                && matches!(
+                    list[i + 1],
+                    AttributeValue::Text(_) | AttributeValue::Raw(_)
+                )
+            {
+                let mut next = list.remove(i + 1);
+
+                next.text_to_raw();
+                list[i].text_to_raw();
+
+                let AttributeValue::Raw(current) = &mut list[i] else {
+                    unreachable!();
+                };
+                let AttributeValue::Raw(next) = next else {
+                    unreachable!();
+                };
+
+                current.push_str(&next);
+            }
+
+            i += 1;
+        }
+    }
+
     pub(crate) fn render(&self, output: &mut String) {
         match self {
             Self::Empty => {}
@@ -106,6 +166,12 @@ pub enum AttributeValue {
 }
 
 impl AttributeValue {
+    fn text_to_raw(&mut self) {
+        if let Self::Text(string) = self {
+            *self = Self::Raw(html_escape::encode_text(string).to_string());
+        }
+    }
+
     fn state(&self) -> Option<&StateDescriptor> {
         if let Self::State(state) = self {
             Some(state)
