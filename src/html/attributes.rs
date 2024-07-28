@@ -67,6 +67,19 @@ mod tests {
     }
 
     #[test]
+    fn test_can_render_list() {
+        let attrs = attrs!(
+            "greeting" => ("hello", "world"),
+        );
+
+        let mut output = String::new();
+        attrs.render(&mut output);
+
+        // doesn't have an extra space at the end
+        assert_eq!(output, "greeting=\"helloworld\"");
+    }
+
+    #[test]
     fn test_can_render_multiple_attributes() {
         let attrs = attrs!(
             "onclick" => "hey",

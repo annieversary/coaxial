@@ -66,7 +66,15 @@ async fn counter(mut ctx: Context) -> CoaxialResponse {
         Content::List(vec![
             div(
                 Content::List(vec![
-                    button("increment counter", attrs!("onclick" => add)).into(),
+                    button(
+                        "increment counter",
+                        attrs!(
+                            "onclick" => add,
+                            // TODO we should have a computed counter+1
+                            "title" => ("go from ",counter," to ",counter,"+1")
+                        ),
+                    )
+                    .into(),
                     button("decrement counter", attrs!("onclick" => sub)).into(),
                     button("click for fun :3", attrs!("onclick" => click)).into(),
                 ]),

@@ -13,7 +13,7 @@ mod content;
 mod element;
 mod funcs;
 
-pub use attribute::{Attribute, ClosureDescriptor, StateDescriptor};
+pub use attribute::{Attribute, AttributeValue, ClosureDescriptor, StateDescriptor};
 pub use attributes::Attributes;
 pub use content::Content;
 pub use element::Element;
