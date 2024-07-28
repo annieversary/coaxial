@@ -34,7 +34,7 @@ impl Element {
         output.push('<');
         output.push_str(&self.name);
 
-        if !self.attributes.list.is_empty() {
+        if !self.attributes.is_empty() {
             output.push(' ');
             self.attributes.render(output);
         }

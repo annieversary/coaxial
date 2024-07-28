@@ -1,9 +1,15 @@
 #[macro_export]
 macro_rules! attrs {
     ( $( $attr:expr => $value:expr ),* $(,)?) => {
-        $crate::html::Attributes::new(
-            vec![$( ($attr.to_string(), $crate::html::Attribute::from($value)), )*]
-        )
+        {
+            let mut attributes = $crate::html::Attributes::default();
+
+            $(
+                attributes.insert($attr, $value);
+            )*
+
+            attributes
+        }
     };
 }
 
