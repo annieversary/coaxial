@@ -43,22 +43,19 @@ impl Display for StateId {
     }
 }
 
-#[derive(Copy)]
 pub struct State<T: 'static> {
     pub(crate) inner: GenerationalBox<StateInner<T>, SyncStorage>,
     pub(crate) id: StateId,
 }
 
-// we implement Clone instead of deriving it, cause we dont need the
+// we implement Copy and Clone instead of deriving them, cause we dont need the
 // `T: Clone` bound
 impl<T: 'static> Clone for State<T> {
     fn clone(&self) -> Self {
-        Self {
-            inner: self.inner,
-            id: self.id,
-        }
+        *self
     }
 }
+impl<T: 'static> Copy for State<T> {}
 
 pub(crate) struct StateInner<T: 'static> {
     pub(crate) value: T,

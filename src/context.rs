@@ -91,7 +91,7 @@ impl<S> Context<S> {
             id: StateId(self.index, self.uuid),
         };
 
-        self.states.insert(state.id, Arc::new(state.clone()));
+        self.states.insert(state.id, Arc::new(state));
 
         state
     }
@@ -178,13 +178,11 @@ mod tests {
     fn test_string_state_in_closures() {
         let mut ctx = Context::<()>::new(0);
 
-        let _state = ctx.use_state("my string".to_string());
+        let state = ctx.use_state("my string".to_string());
 
-        // ctx.use_closure(move || async move {
-        //     _state.set("other string".to_string());
-        // });
-
-        panic!("this fails to compile");
+        ctx.use_closure(move || async move {
+            state.set("other string".to_string());
+        });
 
         // TODO run the closure. assert that it gets set to the correct thing
     }
