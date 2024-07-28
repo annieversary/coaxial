@@ -11,7 +11,7 @@ use std::{
 use tokio::sync::mpsc::{unbounded_channel, UnboundedReceiver, UnboundedSender};
 
 use crate::{
-    closure::{Closure, ClosureTrait, ClosureWrapper, IntoClosure},
+    closure::{Closure, ClosureTrait, ClosureWrapper, Closures, IntoClosure},
     event_handlers::{EventHandler, EventHandlerWrapper},
     html::{Content, Element},
     random_id::RandomId,
@@ -26,7 +26,7 @@ pub struct Context<S = ()> {
     state_owner: Owner<SyncStorage>,
     pub(crate) states: HashMap<RandomId, Arc<dyn AnyState>>,
     // TODO we might want to change closures to have RandomIds as keys
-    pub(crate) closures: HashMap<String, Arc<dyn ClosureTrait<S>>>,
+    pub(crate) closures: Closures<S>,
     pub(crate) event_handlers: HashMap<String, Arc<dyn EventHandler>>,
 
     pub(crate) changes_rx: UnboundedReceiver<(RandomId, String)>,
@@ -68,7 +68,7 @@ impl<S> Context<S> {
         let id = RandomId::from_rng(&mut self.rng);
 
         let closure: ClosureWrapper<I, P> = <I as IntoClosure<P, S>>::wrap(closure);
-        self.closures.insert(id.to_string(), Arc::new(closure));
+        self.closures.insert(id, Arc::new(closure));
 
         Closure {
             id,

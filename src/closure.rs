@@ -4,7 +4,7 @@ use tokio::sync::mpsc::UnboundedSender;
 
 use crate::random_id::RandomId;
 
-pub(crate) type Closures<S> = HashMap<String, Arc<dyn ClosureTrait<S>>>;
+pub(crate) type Closures<S> = HashMap<RandomId, Arc<dyn ClosureTrait<S>>>;
 
 #[derive(Clone)]
 pub struct Closure {

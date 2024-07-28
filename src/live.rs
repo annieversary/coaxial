@@ -139,7 +139,7 @@ where
                                 std::mem::swap(&mut closures, &mut closure_calls);
 
                                 for closure in  &closures {
-                                    let Some(closure) = context.closures.get(&closure.id.to_string()) else {
+                                    let Some(closure) = context.closures.get(&closure.id) else {
                                         // this is a fatal error
                                         return;
                                     };
@@ -222,12 +222,13 @@ async fn handle_socket_message<S: Clone + Send + Sync + 'static>(
 #[serde(tag = "t")]
 enum InMessage {
     Closure {
-        closure: String,
+        closure: RandomId,
     },
     Event {
         name: String,
         params: serde_json::Value,
     },
+    // TODO rename to SetState
     Set {
         id: RandomId,
         value: serde_json::Value,
