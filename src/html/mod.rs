@@ -15,6 +15,6 @@ mod funcs;
 
 pub use attribute::{Attribute, AttributeValue, ClosureDescriptor, StateDescriptor};
 pub use attributes::Attributes;
-pub use content::Content;
+pub use content::{Content, ContentValue};
 pub use element::Element;
 pub use funcs::*;

@@ -18,17 +18,17 @@ pub enum Attribute {
 impl Attribute {
     pub(crate) fn is_reactive(&self) -> bool {
         match self {
-            Attribute::Empty => false,
-            Attribute::Value(value) => value.is_reactive(),
-            Attribute::List(list) => list.iter().any(AttributeValue::is_reactive),
+            Self::Empty => false,
+            Self::Value(value) => value.is_reactive(),
+            Self::List(list) => list.iter().any(AttributeValue::is_reactive),
         }
     }
 
     pub(crate) fn render(&self, output: &mut String) {
         match self {
-            Attribute::Empty => {}
-            Attribute::Value(value) => value.render(output),
-            Attribute::List(list) => {
+            Self::Empty => {}
+            Self::Value(value) => value.render(output),
+            Self::List(list) => {
                 for item in list {
                     item.render(output);
                 }
@@ -56,7 +56,7 @@ impl Attribute {
                     content: vec![Content::Var(0)],
                 });
             }
-            Attribute::List(list) => {
+            Self::List(list) => {
                 let Some(element_id) = element_id else { return };
 
                 let state_descriptors = list.iter().filter_map(|c| c.state()).collect::<Vec<_>>();
@@ -90,7 +90,9 @@ impl Attribute {
             }
 
             Self::Empty => {}
-            Self::Value(_) => {}
+            Self::Value(AttributeValue::Raw(_)) => {}
+            Self::Value(AttributeValue::Text(_)) => {}
+            Self::Value(AttributeValue::Closure(_)) => {}
         }
     }
 }

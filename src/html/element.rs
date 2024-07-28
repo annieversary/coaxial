@@ -15,6 +15,7 @@ pub struct Element {
 impl Element {
     pub(crate) fn optimize(&mut self) {
         self.content.optimize();
+        // TODO self.attributes.optimize();
     }
 
     pub(crate) fn is_reactive(&self) -> bool {
@@ -76,7 +77,7 @@ impl Element {
 mod tests {
     use rand::rngs::mock::StepRng;
 
-    use crate::html::{div, p, StateDescriptor};
+    use crate::html::{content::ContentValue, div, p, StateDescriptor};
 
     use super::*;
 
@@ -89,14 +90,14 @@ mod tests {
                 Element {
                     id: Some(RandomId::from_str("ccccdddd")),
                     name: "p".to_string(),
-                    content: Content::Text("hello".to_string()),
+                    content: "hello".into(),
                     attributes: Default::default(),
                 }
                 .into(),
                 Element {
                     id: None,
                     name: "p".to_string(),
-                    content: Content::Text("world".to_string()),
+                    content: "world".into(),
                     attributes: Default::default(),
                 }
                 .into(),
@@ -116,11 +117,7 @@ mod tests {
     #[test]
     fn test_element_functions() {
         let el = div(
-            Content::List(vec![p(
-                Content::Text("hello".to_string()),
-                Default::default(),
-            )
-            .into()]),
+            Content::List(vec![p("hello", Default::default()).into()]),
             Default::default(),
         );
 
@@ -135,10 +132,10 @@ mod tests {
         let mut el = Element {
             id: None,
             name: "div".to_string(),
-            content: Content::State(StateDescriptor {
+            content: Content::Value(ContentValue::State(StateDescriptor {
                 display: "value".to_string(),
                 state_id: "my_state".to_string(),
-            }),
+            })),
 
             attributes: Default::default(),
         };
@@ -154,7 +151,7 @@ mod tests {
         let mut el = Element {
             id: None,
             name: "div".to_string(),
-            content: Content::Raw("value".to_string()),
+            content: "value".into(),
             attributes: Default::default(),
         };
 

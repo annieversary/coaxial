@@ -3,7 +3,7 @@ use coaxial::{
     attrs,
     config::Config,
     context::Context,
-    html::{body, button, div, head, html, p, strong, style, Content},
+    html::{body, button, div, head, html, p, strong, style, Content, ContentValue},
     live::live,
     CoaxialResponse,
 };
@@ -19,7 +19,7 @@ async fn main() {
                     Content::List(vec![
                         head(
                             Content::List(vec![style(
-                                Content::Raw(
+                                ContentValue::Raw(
                                     html_escape::encode_style(include_str!("styles.css"))
                                         .to_string(),
                                 ),

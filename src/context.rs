@@ -13,7 +13,7 @@ use tokio::sync::mpsc::{unbounded_channel, UnboundedReceiver, UnboundedSender};
 use crate::{
     closure::{Closure, ClosureTrait, ClosureWrapper, Closures, IntoClosure},
     event_handlers::{EventHandler, EventHandlerWrapper},
-    html::{Content, Element},
+    html::{Content, ContentValue, Element},
     random_id::RandomId,
     state::{AnyState, State, StateInner},
     CoaxialResponse, Output,
@@ -158,7 +158,9 @@ impl<S> Context<S> {
             .unwrap();
 
         crate::html::script(
-            Content::Raw(html_escape::encode_script(&script).to_string()),
+            Content::Value(ContentValue::Raw(
+                html_escape::encode_script(&script).to_string(),
+            )),
             Default::default(),
         )
     }
