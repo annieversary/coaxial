@@ -4,16 +4,30 @@ use crate::html::StateDescriptor;
 
 #[derive(Default)]
 pub(crate) struct Reactivity<'a> {
-    descriptors: Vec<ReactivityDescriptor<'a>>,
+    element_content_descriptors: Vec<ElementContentReactivityDescriptor<'a>>,
+    element_attribute_descriptors: Vec<ElementAttributeReactivityDescriptor<'a>>,
+
     state_field_initial_values: HashMap<&'a str, &'a str>,
 }
 
 impl<'a> Reactivity<'a> {
-    pub(crate) fn add(&mut self, descriptor: ReactivityDescriptor<'a>) {
+    pub(crate) fn add_element_content(
+        &mut self,
+        descriptor: ElementContentReactivityDescriptor<'a>,
+    ) {
         for state_descriptor in &descriptor.state_descriptors {
             self.register_state(state_descriptor);
         }
-        self.descriptors.push(descriptor);
+        self.element_content_descriptors.push(descriptor);
+    }
+    pub(crate) fn add_element_attribute(
+        &mut self,
+        descriptor: ElementAttributeReactivityDescriptor<'a>,
+    ) {
+        for state_descriptor in &descriptor.state_descriptors {
+            self.register_state(state_descriptor);
+        }
+        self.element_attribute_descriptors.push(descriptor);
     }
 
     fn register_state(&mut self, state_descriptor: &'a StateDescriptor) {
@@ -24,7 +38,10 @@ impl<'a> Reactivity<'a> {
     pub(crate) fn script(&self) -> String {
         let mut output = String::new();
 
-        for descriptor in &self.descriptors {
+        for descriptor in &self.element_content_descriptors {
+            descriptor.script(&mut output);
+        }
+        for descriptor in &self.element_attribute_descriptors {
             descriptor.script(&mut output);
         }
 
@@ -40,7 +57,42 @@ impl<'a> Reactivity<'a> {
     }
 }
 
-pub(crate) struct ReactivityDescriptor<'a> {
+// TODO we should merge more of content and attribute reactivity into a single function
+fn on_state_change(
+    output: &mut String,
+    state_descriptors: &[&'_ StateDescriptor],
+    element_id: &str,
+) {
+    output.push_str("window.Coaxial.onStateChange(['");
+
+    let state_count = state_descriptors.len();
+    for (i, state_desc) in state_descriptors.iter().enumerate() {
+        output.push_str(&state_desc.state_id);
+
+        if state_count == i + 1 {
+            output.push('\'');
+        } else {
+            output.push_str("','");
+        }
+    }
+
+    output.push_str("], (");
+
+    for i in 0..state_count {
+        output.push('v');
+        output.push_str(&i.to_string());
+
+        if state_count != i + 1 {
+            output.push(',');
+        }
+    }
+
+    output.push_str(") => { if (el = document.querySelector('[coax-id=\"");
+    output.push_str(element_id);
+    output.push_str("\"]')) ");
+}
+
+pub(crate) struct ElementContentReactivityDescriptor<'a> {
     /// Coaxial Id of the element this descriptor applies to
     pub(crate) element_id: &'a str,
     /// Index of `childNodes` to change in this descriptor.
@@ -51,35 +103,9 @@ pub(crate) struct ReactivityDescriptor<'a> {
     pub(crate) content: Vec<Content<'a>>,
 }
 
-impl<'a> ReactivityDescriptor<'a> {
+impl<'a> ElementContentReactivityDescriptor<'a> {
     fn script(&self, output: &mut String) {
-        output.push_str("window.Coaxial.onStateChange(['");
-
-        let state_count = self.state_descriptors.len();
-        for (i, state_desc) in self.state_descriptors.iter().enumerate() {
-            output.push_str(&state_desc.state_id);
-
-            if state_count == i + 1 {
-                output.push('\'');
-            } else {
-                output.push_str("',");
-            }
-        }
-
-        output.push_str("], (");
-
-        for i in 0..state_count {
-            output.push('v');
-            output.push_str(&i.to_string());
-
-            if state_count != i + 1 {
-                output.push(',');
-            }
-        }
-
-        output.push_str(") => { if (el = document.querySelector('[coax-id=\"");
-        output.push_str(self.element_id);
-        output.push_str("\"]')) ");
+        on_state_change(output, &self.state_descriptors, self.element_id);
 
         if let Some(child_node_idx) = self.child_node_idx {
             write!(output, "if (el = el.childNodes[{}]) ", child_node_idx).unwrap();
@@ -123,6 +149,48 @@ impl<'a> Content<'a> {
     }
 }
 
+pub(crate) struct ElementAttributeReactivityDescriptor<'a> {
+    /// Coaxial Id of the element this descriptor applies to
+    pub(crate) element_id: &'a str,
+
+    pub(crate) attribute_key: &'a str,
+
+    pub(crate) state_descriptors: Vec<&'a StateDescriptor>,
+    pub(crate) content: Vec<Content<'a>>,
+}
+impl<'a> ElementAttributeReactivityDescriptor<'a> {
+    fn script(&self, output: &mut String) {
+        // TODO this doesn't deal with the onchange=window.Coaxial.setValue thing
+        // when key is value or checked
+        // i think we want that to be on attributes?
+        // like we generate a new separate attribute
+
+        on_state_change(output, &self.state_descriptors, self.element_id);
+
+        output.push_str("el.setAttribute('");
+        output.push_str(self.attribute_key);
+        output.push_str("', ");
+
+        if self.content.len() == 1 {
+            self.content.first().unwrap().script(output);
+        } else {
+            output.push('[');
+            for (i, item) in self.content.iter().enumerate() {
+                item.script(output);
+                if i + 1 != self.content.len() {
+                    output.push(',');
+                }
+            }
+            output.push_str("].join('')");
+        }
+
+        output.push_str("); });");
+
+        #[cfg(debug_assertions)]
+        output.push('\n');
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -133,7 +201,7 @@ mod tests {
             display: "value".to_string(),
             state_id: "state1".to_string(),
         };
-        let desc = ReactivityDescriptor {
+        let desc = ElementContentReactivityDescriptor {
             element_id: "el_id",
             child_node_idx: None,
             state_descriptors: vec![&state_desc],
@@ -152,7 +220,7 @@ mod tests {
             display: "value".to_string(),
             state_id: "state1".to_string(),
         };
-        let desc = ReactivityDescriptor {
+        let desc = ElementContentReactivityDescriptor {
             element_id: "el_id",
             child_node_idx: Some(22),
             state_descriptors: vec![&state_desc],
@@ -171,7 +239,7 @@ mod tests {
             display: "value".to_string(),
             state_id: "state1".to_string(),
         };
-        let desc = ReactivityDescriptor {
+        let desc = ElementContentReactivityDescriptor {
             element_id: "el_id",
             child_node_idx: None,
             state_descriptors: vec![&state_desc],
@@ -198,7 +266,7 @@ mod tests {
             display: "value2".to_string(),
             state_id: "state2".to_string(),
         };
-        let desc = ReactivityDescriptor {
+        let desc = ElementContentReactivityDescriptor {
             element_id: "el_id",
             child_node_idx: None,
             state_descriptors: vec![&state_desc_1, &state_desc_2],
@@ -216,6 +284,6 @@ mod tests {
         let mut output = String::new();
         desc.script(&mut output);
 
-        assert_eq!("window.Coaxial.onStateChange(['state1',state2'], (v0,v1) => { if (el = document.querySelector('[coax-id=\"el_id\"]')) el.textContent = [v1,'um',v0,'wow',v1,v0,v1].join(''); });\n", output);
+        assert_eq!("window.Coaxial.onStateChange(['state1','state2'], (v0,v1) => { if (el = document.querySelector('[coax-id=\"el_id\"]')) el.textContent = [v1,'um',v0,'wow',v1,v0,v1].join(''); });\n", output);
     }
 }

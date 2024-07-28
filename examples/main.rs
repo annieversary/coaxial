@@ -70,7 +70,7 @@ async fn counter(mut ctx: Context) -> CoaxialResponse {
                     button("decrement counter", attrs!("onclick" => sub)).into(),
                     button("click for fun :3", attrs!("onclick" => click)).into(),
                 ]),
-                attrs!("class" => "buttons"),
+                attrs!("class" => "buttons", "data-clicks" => clicks),
             )
             .into(),
             p(
@@ -79,7 +79,7 @@ async fn counter(mut ctx: Context) -> CoaxialResponse {
                     counter.into(),
                     ". ".into(),
                     strong("Wow!", Default::default()).into(),
-                    "counter is ".into(),
+                    " counter is ".into(),
                     counter.into(),
                     " and there are ".into(),
                     clicks.into(),

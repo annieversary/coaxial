@@ -1,15 +1,11 @@
-use super::Attribute;
+use crate::reactive_js::Reactivity;
 
-macro_rules! push_strs {
-    ( $output:ident => $($vals:expr),* $(,)? ) => {
-        $(
-            $output.push_str($vals);
-        )*
-    };
-}
+use super::Attribute;
 
 #[derive(Default, Debug, PartialEq, Eq)]
 pub struct Attributes {
+    // TODO change this to a HashMap
+    // then on multiple insert we group them into a list
     pub(crate) list: Vec<(String, Attribute)>,
 }
 
@@ -25,7 +21,7 @@ impl Attributes {
     }
 
     pub(crate) fn render(&self, output: &mut String) {
-        for (key, attr) in &self.list {
+        for (i, (key, attr)) in self.list.iter().enumerate() {
             output.push_str(key);
 
             if matches!(attr, Attribute::Empty) {
@@ -33,35 +29,24 @@ impl Attributes {
             }
 
             output.push_str("=\"");
-
-            match attr {
-                Attribute::Raw(text) => output.push_str(text),
-                Attribute::Text(text) => {
-                    output.push_str(&html_escape::encode_double_quoted_attribute(text))
-                }
-                // TODO this needs to include something that updates it
-                // probably outside of it, as generated code
-                Attribute::State(desc) => {
-                    push_strs!(output =>
-                        &desc.display, "\" coax-change-", &desc.state_id, "=\"", key,
-                    );
-
-                    if key == "value" || key == "checked" {
-                        push_strs!(output =>
-                            "\" onchange=\"window.Coaxial.setValue(",
-                            &desc.state_id, ", ['", key, "'])"
-                        );
-                    }
-                }
-                Attribute::Closure(desc) => {
-                    output.push_str("window.Coaxial.callClosure('");
-                    output.push_str(&desc.closure_id);
-                    output.push_str("')");
-                }
-                Attribute::Empty => unreachable!(),
-            }
-
+            attr.render(output);
             output.push('"');
+
+            if i + 1 != self.list.len() {
+                output.push(' ');
+            }
+        }
+    }
+
+    pub(crate) fn reactivity<'a, 'b>(
+        &'a self,
+        element_id: Option<&'a str>,
+        reactivity: &'b mut Reactivity<'a>,
+    ) where
+        'a: 'b,
+    {
+        for (key, attr) in &self.list {
+            attr.reactivity(element_id, key, reactivity);
         }
     }
 }
@@ -71,14 +56,29 @@ mod tests {
     use super::*;
 
     #[test]
-    fn test_can_render_attributes() {
+    fn test_can_render_one_attribute() {
         let attrs = attrs!(
-            "onclick" => Attribute::Text("hey".to_string()),
+            "hi" => Attribute::Text("hey".to_string()),
         );
 
         let mut output = String::new();
         attrs.render(&mut output);
 
-        assert_eq!(output, "onclick=\"hey\"");
+        // doesn't have an extra space at the end
+        assert_eq!(output, "hi=\"hey\"");
+    }
+
+    #[test]
+    fn test_can_render_multiple_attributes() {
+        let attrs = attrs!(
+            "onclick" => Attribute::Text("hey".to_string()),
+            "data-something" => Attribute::Text("wow".to_string()),
+        );
+
+        let mut output = String::new();
+        attrs.render(&mut output);
+
+        // has a space between the two attributes, but not at the end
+        assert_eq!(output, "onclick=\"hey\" data-something=\"wow\"");
     }
 }

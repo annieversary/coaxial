@@ -69,7 +69,8 @@ impl Element {
     where
         'a: 'b,
     {
-        self.content.reactivity(self.id.as_deref(), reactivity)
+        self.content.reactivity(self.id.as_deref(), reactivity);
+        self.attributes.reactivity(self.id.as_deref(), reactivity);
     }
 
     pub fn attributes(&self) -> &Attributes {

@@ -1,6 +1,10 @@
 use std::fmt::Display;
 
-use crate::{closure::Closure, state::State};
+use crate::{
+    closure::Closure,
+    reactive_js::{Content, ElementAttributeReactivityDescriptor, Reactivity},
+    state::State,
+};
 
 #[derive(Default, Debug, PartialEq, Eq)]
 pub enum Attribute {
@@ -22,6 +26,74 @@ impl Attribute {
             Attribute::Closure(_) => false,
 
             Attribute::State(_) => true,
+        }
+    }
+
+    pub(crate) fn render(&self, output: &mut String) {
+        match self {
+            Attribute::Raw(text) => output.push_str(text),
+            Attribute::Text(text) => {
+                output.push_str(&html_escape::encode_double_quoted_attribute(text))
+            }
+            // TODO this needs to include something that updates it
+            // probably outside of it, as generated code
+            Attribute::State(desc) => {
+                output.push_str(&desc.display);
+
+                // push_strs!(output =>
+                //     &desc.display, "\" coax-change-", &desc.state_id, "=\"", key,
+                // );
+
+                // if key == "value" || key == "checked" {
+                //     push_strs!(output =>
+                //         "\" onchange=\"window.Coaxial.setValue(",
+                //         &desc.state_id, ", ['", key, "'])"
+                //     );
+                // }
+            }
+            Attribute::Closure(desc) => {
+                output.push_str("window.Coaxial.callClosure('");
+                output.push_str(&desc.closure_id);
+                output.push_str("')");
+            }
+            Attribute::Empty => {}
+        }
+    }
+
+    pub(crate) fn reactivity<'a, 'b>(
+        &'a self,
+        element_id: Option<&'a str>,
+        key: &'a str,
+        reactivity: &'b mut Reactivity<'a>,
+    ) where
+        'a: 'b,
+    {
+        // so im not sure how we want to deal with closures
+        // cause we can do the onclick="window.Coaxial.callClosure()" thing,
+        // but that will:
+        // 1) not work for Lists (not sure why a closure would be in a list)
+        // 2) not work if the attribute is something that isn't run as JS
+        // im thinking that someone could do like a (data-function => closure), and then try to run said closure from their own js
+
+        match self {
+            Attribute::Empty => {}
+            Attribute::Raw(_) => {}
+            Attribute::Text(_) => {}
+            Attribute::State(state_descriptor) => {
+                let Some(element_id) = element_id else { return };
+
+                reactivity.add_element_attribute(ElementAttributeReactivityDescriptor {
+                    element_id,
+                    attribute_key: key,
+
+                    state_descriptors: vec![state_descriptor],
+                    content: vec![Content::Var(0)],
+                });
+            }
+            Attribute::Closure(_) => {
+                // TODO i dont know if we want to do something here, or if we should stay with rendering the
+                // `window.Coaxial.callClosure(...)`
+            }
         }
     }
 }

@@ -73,7 +73,7 @@ class Coaxial {
             for (const id of ids) {
                 this.onStateChange(id, v => {
                     const params = ids.map(i => i === id ? v : this.state[i]);
-                    closure(params);
+                    closure(...params);
                 });
             }
 

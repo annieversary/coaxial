@@ -1,7 +1,7 @@
 use std::fmt::Display;
 
 use crate::{
-    reactive_js::{Content as ReactiveContent, Reactivity, ReactivityDescriptor},
+    reactive_js::{Content as ReactiveContent, ElementContentReactivityDescriptor, Reactivity},
     state::State,
 };
 
@@ -155,7 +155,7 @@ impl Content {
                     let Some(id) = element_id else { return };
 
                     let states = group.iter().filter_map(|c| c.state()).collect::<Vec<_>>();
-                    reactivity.add(ReactivityDescriptor {
+                    reactivity.add_element_content(ElementContentReactivityDescriptor {
                         element_id: id,
                         child_node_idx: Some(group_id ),
                         content: group
@@ -207,10 +207,10 @@ impl Content {
             Content::State(desc) => {
                 let Some(id) = element_id else { return };
 
-                reactivity.add(ReactivityDescriptor {
+                reactivity.add_element_content(ElementContentReactivityDescriptor {
                     element_id: id,
                     child_node_idx: None,
-                    state_descriptors: vec![&desc],
+                    state_descriptors: vec![desc],
                     content: vec![ReactiveContent::Var(0)],
                 });
             }
