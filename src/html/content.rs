@@ -2,7 +2,7 @@ use std::fmt::Display;
 
 use crate::{
     random_id::RandomId,
-    reactive_js::{Content as ReactiveContent, ElementContentReactivityDescriptor, Reactivity},
+    reactive_js::{Content as ReactiveContent, Reactivity, ReactivityDescriptor, Target},
     state::State,
 };
 
@@ -199,9 +199,11 @@ impl Content {
                         })
                         .collect();
 
-                    reactivity.add_element_content(ElementContentReactivityDescriptor {
+                    reactivity.add(ReactivityDescriptor {
                         element_id: id,
                         child_node_idx: Some(group_id),
+                        target: Target::TextContent,
+
                         content,
                         state_descriptors,
                     });
@@ -239,9 +241,10 @@ impl Content {
             Content::Value(ContentValue::State(desc)) => {
                 let Some(id) = element_id else { return };
 
-                reactivity.add_element_content(ElementContentReactivityDescriptor {
+                reactivity.add(ReactivityDescriptor {
                     element_id: id,
                     child_node_idx: None,
+                    target: Target::TextContent,
                     state_descriptors: vec![desc],
                     content: vec![ReactiveContent::Var(0)],
                 });

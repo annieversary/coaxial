@@ -3,7 +3,7 @@ use std::fmt::Display;
 use crate::{
     closure::Closure,
     random_id::RandomId,
-    reactive_js::{Content, ElementAttributeReactivityDescriptor, Reactivity},
+    reactive_js::{Content, Reactivity, ReactivityDescriptor, Target},
     state::State,
 };
 
@@ -108,9 +108,10 @@ impl Attribute {
             Self::Value(AttributeValue::State(state_descriptor)) => {
                 let Some(element_id) = element_id else { return };
 
-                reactivity.add_element_attribute(ElementAttributeReactivityDescriptor {
+                reactivity.add(ReactivityDescriptor {
                     element_id,
-                    attribute_key: key,
+                    child_node_idx: None,
+                    target: Target::Attribute(key),
 
                     state_descriptors: vec![state_descriptor],
                     content: vec![Content::Var(0)],
@@ -140,9 +141,10 @@ impl Attribute {
                     })
                     .collect();
 
-                reactivity.add_element_attribute(ElementAttributeReactivityDescriptor {
+                reactivity.add(ReactivityDescriptor {
                     element_id,
-                    attribute_key: key,
+                    child_node_idx: None,
+                    target: Target::Attribute(key),
 
                     state_descriptors,
                     content,
