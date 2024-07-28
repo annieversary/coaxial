@@ -25,7 +25,6 @@ pub struct Context<S = ()> {
 
     state_owner: Owner<SyncStorage>,
     pub(crate) states: HashMap<RandomId, Arc<dyn AnyState>>,
-    // TODO we might want to change closures to have RandomIds as keys
     pub(crate) closures: Closures<S>,
     pub(crate) event_handlers: HashMap<String, Arc<dyn EventHandler>>,
 
@@ -162,33 +161,51 @@ impl<S> Context<S> {
 
 #[cfg(test)]
 mod tests {
+    use axum::http::{request::Parts, Request};
+
     use super::*;
 
-    #[test]
-    fn test_u32_state_in_closures() {
+    fn parts() -> Parts {
+        let req = Request::new(());
+        let (parts, _) = req.into_parts();
+        parts
+    }
+
+    #[tokio::test]
+    async fn test_u32_state_in_closures() {
         let mut ctx = Context::<()>::new(0);
 
         let state = ctx.use_state(0u32);
 
-        ctx.use_closure(move || async move {
+        let closure = ctx.use_closure(move || async move {
             state.set(1);
         });
 
-        // TODO run the closure. assert that it gets set to the correct thing
+        // we run the closure manually, not by calling call
+        // call relies on the websocket loop to be running
+        let func = ctx.closures.get(&closure.id).unwrap();
+
+        func.call(parts(), ()).await;
+
+        assert_eq!(1, state.get());
     }
 
-    #[test]
-    fn test_string_state_in_closures() {
+    #[tokio::test]
+    async fn test_string_state_in_closures() {
         let mut ctx = Context::<()>::new(0);
 
         let state = ctx.use_state("my string".to_string());
 
-        ctx.use_closure(move || async move {
+        let closure = ctx.use_closure(move || async move {
             state.set("other string".to_string());
         });
 
-        // TODO run the closure. assert that it gets set to the correct thing
-        // we will need a way to call the closure directly, without the having the websocket connection set up
-        // probably by passing in an empty state and a default Parts as a test
+        // we run the closure manually, not by calling call
+        // call relies on the websocket loop to be running
+        let func = ctx.closures.get(&closure.id).unwrap();
+
+        func.call(parts(), ()).await;
+
+        assert_eq!("other string", state.get());
     }
 }
