@@ -1,6 +1,6 @@
 use axum::response::Response;
 use generational_box::{AnyStorage, Owner, SyncStorage};
-use rand::{rngs::StdRng, Rng, SeedableRng};
+use rand::{rngs::StdRng, SeedableRng};
 use serde::de::DeserializeOwned;
 use std::{
     collections::HashMap,
@@ -20,9 +20,6 @@ use crate::{
 };
 
 pub struct Context<S = ()> {
-    uuid: u64,
-    index: u64,
-
     pub(crate) rng: StdRng,
     rng_seed: u64,
 
@@ -44,12 +41,9 @@ impl<S> Context<S> {
         let (changes_tx, changes_rx) = unbounded_channel();
         let (closure_call_tx, closure_call_rx) = unbounded_channel();
 
-        let mut rng = StdRng::seed_from_u64(seed);
+        let rng = StdRng::seed_from_u64(seed);
 
         Self {
-            uuid: rng.gen(),
-            index: 0,
-
             rng,
             rng_seed: seed,
 
@@ -71,7 +65,6 @@ impl<S> Context<S> {
         P: Send + Sync + 'static,
         ClosureWrapper<I, P>: ClosureTrait<S>,
     {
-        self.index += 1;
         let id = RandomId::from_rng(&mut self.rng);
 
         let closure: ClosureWrapper<I, P> = <I as IntoClosure<P, S>>::wrap(closure);
@@ -88,8 +81,6 @@ impl<S> Context<S> {
         &mut self,
         value: T,
     ) -> State<T> {
-        self.index += 1;
-
         let id = RandomId::from_rng(&mut self.rng);
         let state = State {
             inner: self.state_owner.insert_with_caller(
