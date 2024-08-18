@@ -1,9 +1,42 @@
 use generational_box::{GenerationalBox, SyncStorage};
 use serde::de::DeserializeOwned;
-use std::fmt::Display;
-use tokio::sync::mpsc::UnboundedSender;
+use serde_json::Value;
+use std::{collections::HashMap, fmt::Display, sync::Arc};
+use tokio::sync::mpsc::{unbounded_channel, UnboundedReceiver, UnboundedSender};
 
 use crate::random_id::RandomId;
+
+pub(crate) struct States {
+    states: HashMap<RandomId, Arc<dyn AnyState>>,
+
+    pub(crate) changes_rx: UnboundedReceiver<(RandomId, String)>,
+    pub(crate) changes_tx: UnboundedSender<(RandomId, String)>,
+}
+
+impl States {
+    pub(crate) fn insert(&mut self, id: RandomId, state: Arc<dyn AnyState>) {
+        self.states.insert(id, state);
+    }
+
+    pub(crate) fn set(&self, id: RandomId, value: Value) {
+        let Some(state) = self.states.get(&id) else {
+            // TODO return an error
+            panic!("state not found");
+        };
+        state.set_value(value);
+    }
+}
+
+impl Default for States {
+    fn default() -> Self {
+        let (changes_tx, changes_rx) = unbounded_channel();
+        Self {
+            states: Default::default(),
+            changes_rx,
+            changes_tx,
+        }
+    }
+}
 
 pub struct State<T: 'static> {
     pub(crate) inner: GenerationalBox<StateInner<T>, SyncStorage>,

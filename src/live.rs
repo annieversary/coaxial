@@ -1,4 +1,4 @@
-use std::{collections::HashMap, sync::Arc};
+use std::collections::HashMap;
 
 use axum::{
     body::Body,
@@ -14,7 +14,7 @@ use tokio::{select, sync::mpsc::UnboundedSender};
 
 use crate::{
     config::Config, context::Context, event_handlers::Events, handler::CoaxialHandler,
-    html::DOCTYPE_HTML, random_id::RandomId, reactive_js::Reactivity, state::AnyState,
+    html::DOCTYPE_HTML, random_id::RandomId, reactive_js::Reactivity, state::States,
 };
 
 pub fn live<T, H, S>(handler: H) -> MethodRouter<S>
@@ -113,7 +113,7 @@ where
                                     Err(SocketError::Fatal) => return,
                                 };
                             }
-                            _ = context.changes_rx.recv_many(&mut changes, 10000) => {
+                            _ = context.states.changes_rx.recv_many(&mut changes, 10000) => {
                                 let mut updates = Vec::new();
                                 std::mem::swap(&mut changes, &mut updates);
 
@@ -142,8 +142,6 @@ where
         },
     )
 }
-
-type States = std::collections::HashMap<RandomId, Arc<dyn AnyState>>;
 
 enum SocketError {
     Fatal,
@@ -175,12 +173,7 @@ async fn handle_socket_message(
             events.handle(name, params);
         }
         InMessage::SetState { id, value } => {
-            // get the state and set it
-            let Some(state) = states.get(&id) else {
-                // TODO maybe we should return an error here?
-                panic!("state not found");
-            };
-            state.set_value(value);
+            states.set(id, value);
         }
     }
 

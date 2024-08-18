@@ -3,13 +3,11 @@ use generational_box::{AnyStorage, Owner, SyncStorage};
 use rand::{rngs::StdRng, SeedableRng};
 use serde::de::DeserializeOwned;
 use std::{
-    collections::HashMap,
     fmt::{Display, Write},
     future::Future,
     panic::Location,
     sync::Arc,
 };
-use tokio::sync::mpsc::{unbounded_channel, UnboundedReceiver, UnboundedSender};
 
 use crate::{
     closures::{Closure, ClosureInner, ClosureTrait, ClosureWrapper, Closures, IntoClosure},
@@ -17,7 +15,7 @@ use crate::{
     event_handlers::Events,
     html::{Content, ContentValue, Element},
     random_id::RandomId,
-    state::{AnyState, State, StateInner},
+    state::{State, StateInner, States},
     CoaxialResponse, Output,
 };
 
@@ -28,20 +26,15 @@ pub struct Context<S = ()> {
     in_websocket: bool,
 
     state_owner: Owner<SyncStorage>,
-    pub(crate) states: HashMap<RandomId, Arc<dyn AnyState>>,
 
+    pub(crate) states: States,
     pub(crate) events: Events,
     pub(crate) closures: Closures<S>,
     pub(crate) computed_states: ComputedStates,
-
-    pub(crate) changes_rx: UnboundedReceiver<(RandomId, String)>,
-    changes_tx: UnboundedSender<(RandomId, String)>,
 }
 
 impl<S> Context<S> {
     pub(crate) fn new(seed: u64, in_websocket: bool) -> Self {
-        let (changes_tx, changes_rx) = unbounded_channel();
-
         let rng = StdRng::seed_from_u64(seed);
 
         Self {
@@ -50,14 +43,11 @@ impl<S> Context<S> {
             in_websocket,
 
             state_owner: <SyncStorage as AnyStorage>::owner(),
-            states: Default::default(),
 
+            states: Default::default(),
             events: Default::default(),
             closures: Default::default(),
             computed_states: Default::default(),
-
-            changes_rx,
-            changes_tx,
         }
     }
 
@@ -97,7 +87,7 @@ impl<S> Context<S> {
             inner: self.state_owner.insert_with_caller(
                 StateInner {
                     value,
-                    changes_tx: self.changes_tx.clone(),
+                    changes_tx: self.states.changes_tx.clone(),
                 },
                 #[cfg(any(debug_assertions, feature = "debug_ownership"))]
                 caller,
