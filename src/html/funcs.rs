@@ -16,7 +16,8 @@ macro_rules! make_elements_funcs {
 }
 
 make_elements_funcs!(
-    div, html, head, body, p, a, button, section, aside, main, script, strong, b, i, em, style
+    div, html, head, body, p, a, button, section, aside, main, script, strong, b, i, em, style,
+    pre, code
 );
 
 macro_rules! make_void_elements {
