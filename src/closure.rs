@@ -5,12 +5,36 @@ use tokio::sync::mpsc::UnboundedSender;
 
 use crate::random_id::RandomId;
 
-pub(crate) type Closures<S> = HashMap<RandomId, Arc<dyn ClosureTrait<S>>>;
+pub(crate) struct Closures<S> {
+    closures: HashMap<RandomId, Arc<dyn ClosureTrait<S>>>,
+}
+
+impl<S> Closures<S> {
+    pub(crate) fn insert(&mut self, id: RandomId, closure: Arc<dyn ClosureTrait<S>>) {
+        self.closures.insert(id, closure);
+    }
+
+    pub fn get(&self, id: RandomId) -> Option<&Arc<dyn ClosureTrait<S>>> {
+        self.closures.get(&id)
+    }
+}
+
+impl<S> Default for Closures<S> {
+    fn default() -> Self {
+        Self {
+            closures: Default::default(),
+        }
+    }
+}
 
 #[derive(Clone, Copy)]
 pub struct Closure {
     pub(crate) id: RandomId,
-    pub(crate) closure_call_tx: GenerationalBox<UnboundedSender<Self>, SyncStorage>,
+    pub(crate) inner: GenerationalBox<ClosureInner, SyncStorage>,
+}
+
+pub(crate) struct ClosureInner {
+    pub(crate) closure_call_tx: UnboundedSender<Closure>,
 }
 
 impl Closure {
@@ -19,7 +43,11 @@ impl Closure {
     /// Note: this doesn't call the closure immediately.
     /// Keep in mind, the closure will not be run until the websocket connection has been established.
     pub fn call(&self) {
-        self.closure_call_tx.read().send(self.clone()).unwrap();
+        self.inner
+            .read()
+            .closure_call_tx
+            .send(self.clone())
+            .unwrap();
     }
 }
 

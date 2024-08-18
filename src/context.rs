@@ -12,7 +12,7 @@ use std::{
 use tokio::sync::mpsc::{unbounded_channel, UnboundedReceiver, UnboundedSender};
 
 use crate::{
-    closure::{Closure, ClosureTrait, ClosureWrapper, Closures, IntoClosure},
+    closure::{Closure, ClosureInner, ClosureTrait, ClosureWrapper, Closures, IntoClosure},
     computed::{ComputedState, ComputedStates, InitialValue, StateGetter},
     event_handlers::{EventHandler, EventHandlerWrapper},
     html::{Content, ContentValue, Element},
@@ -29,9 +29,9 @@ pub struct Context<S = ()> {
 
     state_owner: Owner<SyncStorage>,
     pub(crate) states: HashMap<RandomId, Arc<dyn AnyState>>,
-    pub(crate) closures: Closures<S>,
     pub(crate) event_handlers: HashMap<String, Arc<dyn EventHandler>>,
 
+    pub(crate) closures: Closures<S>,
     pub(crate) computed_states: ComputedStates,
 
     pub(crate) changes_rx: UnboundedReceiver<(RandomId, String)>,
@@ -55,9 +55,9 @@ impl<S> Context<S> {
 
             state_owner: <SyncStorage as AnyStorage>::owner(),
             states: Default::default(),
-            closures: Default::default(),
             event_handlers: Default::default(),
 
+            closures: Default::default(),
             computed_states: Default::default(),
 
             changes_rx,
@@ -81,8 +81,10 @@ impl<S> Context<S> {
 
         Closure {
             id,
-            closure_call_tx: self.state_owner.insert_with_caller(
-                self.closure_call_tx.clone(),
+            inner: self.state_owner.insert_with_caller(
+                ClosureInner {
+                    closure_call_tx: self.closure_call_tx.clone(),
+                },
                 #[cfg(any(debug_assertions, feature = "debug_ownership"))]
                 std::panic::Location::caller(),
             ),
@@ -310,7 +312,7 @@ mod tests {
 
         // we run the closure manually, not by calling call
         // call relies on the websocket loop to be running
-        let func = ctx.closures.get(&closure.id).unwrap();
+        let func = ctx.closures.get(closure.id).unwrap();
 
         func.call(parts(), ()).await;
 
@@ -329,7 +331,7 @@ mod tests {
 
         // we run the closure manually, not by calling call
         // call relies on the websocket loop to be running
-        let func = ctx.closures.get(&closure.id).unwrap();
+        let func = ctx.closures.get(closure.id).unwrap();
 
         func.call(parts(), ()).await;
 

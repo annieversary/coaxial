@@ -145,7 +145,7 @@ where
                                 std::mem::swap(&mut closures, &mut closure_calls);
 
                                 for closure in  &closures {
-                                    let Some(closure) = context.closures.get(&closure.id) else {
+                                    let Some(closure) = context.closures.get(closure.id) else {
                                         // this is a fatal error
                                         return;
                                     };
@@ -195,7 +195,7 @@ async fn handle_socket_message<S: Clone + Send + Sync + 'static>(
 
     match msg {
         InMessage::Closure { closure } => {
-            let Some(closure) = closures.get(&closure) else {
+            let Some(closure) = closures.get(closure) else {
                 return Err(SocketError::Fatal);
             };
 
