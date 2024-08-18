@@ -12,7 +12,7 @@ use std::{
 use tokio::sync::mpsc::{unbounded_channel, UnboundedReceiver, UnboundedSender};
 
 use crate::{
-    closure::{Closure, ClosureInner, ClosureTrait, ClosureWrapper, Closures, IntoClosure},
+    closures::{Closure, ClosureInner, ClosureTrait, ClosureWrapper, Closures, IntoClosure},
     computed::{ComputedState, ComputedStates, InitialValue, StateGetter},
     event_handlers::Events,
     html::{Content, ContentValue, Element},

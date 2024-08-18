@@ -6,7 +6,7 @@ use axum::response::Response;
 use context::Context;
 use html::Element;
 
-mod closure;
+mod closures;
 pub mod computed;
 pub mod config;
 pub mod context;

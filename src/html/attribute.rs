@@ -1,7 +1,7 @@
 use std::fmt::Display;
 
 use crate::{
-    closure::Closure,
+    closures::Closure,
     computed::ComputedState,
     random_id::RandomId,
     reactive_js::{Content, Reactivity, ReactivityDescriptor, Target},
