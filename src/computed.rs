@@ -50,7 +50,7 @@ impl ComputedStates {
         state: State<O>,
         states: I,
         compute: F,
-    ) -> ComputedState<O>
+    ) -> (ComputedState<O>, OnChangeHandlerAsync)
     where
         O: DeserializeOwned + Display + Send + Sync + 'static,
         I: StateGetter,
@@ -58,26 +58,25 @@ impl ComputedStates {
         FUT: Future<Output = O> + Send + Sync + 'static,
     {
         let compute = Arc::new(compute);
-        for id in states.id_list() {
+        let _states = states.clone();
+        let on_change_listener: OnChangeHandlerAsync = Arc::new(move || {
             let compute = compute.clone();
-            let states = states.clone();
-            let on_change_listener: OnChangeHandlerAsync = Arc::new(move || {
-                let compute = compute.clone();
-                let states = states.clone();
-                Box::pin(async move {
-                    state.set(compute(states.get()).await);
-                })
-            });
+            let states = _states.clone();
+            Box::pin(async move {
+                state.set(compute(states.get()).await);
+            })
+        });
 
+        for id in states.id_list() {
             if let Some(value) = self.on_change_handler_async.get_mut(&id) {
-                value.push(on_change_listener);
+                value.push(on_change_listener.clone());
             } else {
                 self.on_change_handler_async
-                    .insert(id, vec![on_change_listener]);
+                    .insert(id, vec![on_change_listener.clone()]);
             }
         }
 
-        ComputedState(state)
+        (ComputedState(state), on_change_listener)
     }
 
     /// Recompute ComputedStates that depend on the state with id `id`
@@ -97,6 +96,17 @@ impl ComputedStates {
         }
     }
 }
+
+pub enum InitialValue<O> {
+    /// Initially compute the value with the provided closure, blocking.
+    Compute,
+    /// Set the initial value.
+    Value(O),
+    /// Set the initial value, and recompute in the background.
+    ValueAndCompute(O),
+}
+
+// States
 
 pub struct ComputedState<T: 'static>(pub(crate) State<T>);
 

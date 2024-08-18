@@ -12,7 +12,7 @@ use tokio::sync::mpsc::{unbounded_channel, UnboundedReceiver, UnboundedSender};
 
 use crate::{
     closure::{Closure, ClosureTrait, ClosureWrapper, Closures, IntoClosure},
-    computed::{ComputedState, ComputedStates, StateGetter},
+    computed::{ComputedState, ComputedStates, InitialValue, StateGetter},
     event_handlers::{EventHandler, EventHandlerWrapper},
     html::{Content, ContentValue, Element},
     random_id::RandomId,
@@ -23,6 +23,8 @@ use crate::{
 pub struct Context<S = ()> {
     pub(crate) rng: StdRng,
     rng_seed: u64,
+
+    in_websocket: bool,
 
     state_owner: Owner<SyncStorage>,
     pub(crate) states: HashMap<RandomId, Arc<dyn AnyState>>,
@@ -39,7 +41,7 @@ pub struct Context<S = ()> {
 }
 
 impl<S> Context<S> {
-    pub(crate) fn new(seed: u64) -> Self {
+    pub(crate) fn new(seed: u64, in_websocket: bool) -> Self {
         let (changes_tx, changes_rx) = unbounded_channel();
         let (closure_call_tx, closure_call_rx) = unbounded_channel();
 
@@ -48,6 +50,7 @@ impl<S> Context<S> {
         Self {
             rng,
             rng_seed: seed,
+            in_websocket,
 
             state_owner: <SyncStorage as AnyStorage>::owner(),
             states: Default::default(),
@@ -119,6 +122,30 @@ impl<S> Context<S> {
         self.computed_states.add_computed(state, states, compute)
     }
 
+    pub fn use_computed_with<O, I, F>(
+        &mut self,
+        states: I,
+        compute: F,
+        initial: InitialValue<O>,
+    ) -> ComputedState<O>
+    where
+        O: DeserializeOwned + Display + Send + Sync + 'static,
+        I: StateGetter + Send + Sync + 'static,
+        F: Fn(<I as StateGetter>::Output) -> O + Send + Sync + 'static,
+    {
+        let initial = match initial {
+            InitialValue::Compute => compute(states.get()),
+            InitialValue::Value(value) => value,
+            // it's a blocking function, so we can't run it in the background.
+            // we just recompute and ignore the provided value
+            InitialValue::ValueAndCompute(_value) => compute(states.get()),
+        };
+
+        let state = self.use_state(initial);
+
+        self.computed_states.add_computed(state, states, compute)
+    }
+
     pub async fn use_computed_async<O, I, F, FUT>(
         &mut self,
         states: I,
@@ -132,9 +159,48 @@ impl<S> Context<S> {
     {
         let state = self.use_state(compute(states.get()).await);
 
-        self.computed_states
+        let (state, _) = self
+            .computed_states
             .add_computed_async(state, states, compute)
-            .await
+            .await;
+
+        state
+    }
+
+    pub async fn use_computed_async_with<O, I, F, FUT>(
+        &mut self,
+        states: I,
+        compute: F,
+        initial: InitialValue<O>,
+    ) -> ComputedState<O>
+    where
+        O: DeserializeOwned + Display + Send + Sync + 'static,
+        I: StateGetter,
+        F: Fn(<I as StateGetter>::Output) -> FUT + Send + Sync + 'static,
+        FUT: Future<Output = O> + Send + Sync + 'static,
+    {
+        let mut needs_recompute = false;
+        let initial = match initial {
+            InitialValue::Compute => compute(states.get()).await,
+            InitialValue::Value(value) => value,
+            InitialValue::ValueAndCompute(value) => {
+                needs_recompute = true;
+                value
+            }
+        };
+
+        let state = self.use_state(initial);
+
+        let (state, recompute) = self
+            .computed_states
+            .add_computed_async(state, states, compute)
+            .await;
+
+        if needs_recompute && self.in_websocket {
+            tokio::spawn(recompute());
+        }
+
+        state
     }
 
     // TODO ideally, we would store a function that takes a type that impls Deserialize

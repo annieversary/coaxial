@@ -1,6 +1,7 @@
 use std::fmt::Display;
 
 use crate::{
+    computed::ComputedState,
     random_id::RandomId,
     reactive_js::{Content as ReactiveContent, Reactivity, ReactivityDescriptor, Target},
     state::State,
@@ -295,6 +296,14 @@ where
     T: Clone + Display + Send + Sync + 'static,
 {
     fn from(value: State<T>) -> Self {
+        Self::State(value.into())
+    }
+}
+impl<T> From<ComputedState<T>> for ContentValue
+where
+    T: Clone + Display + Send + Sync + 'static,
+{
+    fn from(value: ComputedState<T>) -> Self {
         Self::State(value.into())
     }
 }

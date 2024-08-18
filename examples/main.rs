@@ -1,6 +1,7 @@
 use axum::Router;
 use coaxial::{
     attrs,
+    computed::InitialValue,
     config::Config,
     context::Context,
     html::{body, button, div, head, html, p, strong, style, Content, ContentValue},
@@ -68,20 +69,16 @@ async fn counter(mut ctx: Context) -> CoaxialResponse {
     });
 
     let delayed_update = ctx
-        .use_computed_async(counter, move |counter: i32| async move {
-            tokio::time::sleep(tokio::time::Duration::from_secs(3)).await;
+        .use_computed_async_with(
+            counter,
+            |counter: i32| async move {
+                tokio::time::sleep(tokio::time::Duration::from_secs(3)).await;
 
-            counter
-        })
+                counter
+            },
+            InitialValue::ValueAndCompute(0),
+        )
         .await;
-
-    /*
-    TODO switch to a syntax like this?
-    ctx.computed(counter).with_value(0).async(|...| ...)
-    ctx.computed(counter).with_default(0).async(|...| ...)
-    ctx.computed(counter).with_computed().async(|...| ...)
-    computed is the default
-     */
 
     let element = div(
         Content::List(vec![

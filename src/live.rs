@@ -48,7 +48,9 @@ where
                 if !is_websocket {
                     let rng_seed: u64 = random();
 
-                    let response = handler.call(request, state, Context::new(rng_seed)).await;
+                    let response = handler
+                        .call(request, state, Context::new(rng_seed, false))
+                        .await;
 
                     let (parts, mut body) = response.into_parts();
 
@@ -88,7 +90,7 @@ where
                 // TODO ideally, we'll store the context in a HashMap after the initial request,
                 // which allows us to not re-run the handler here
                 let response = handler
-                    .call(request, state.clone(), Context::new(rng_seed))
+                    .call(request, state.clone(), Context::new(rng_seed, true))
                     .await;
 
                 ws.on_upgrade(|mut socket: WebSocket| async move {

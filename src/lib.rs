@@ -6,8 +6,8 @@ use axum::response::Response;
 use context::Context;
 use html::Element;
 
-mod computed;
 mod closure;
+pub mod computed;
 pub mod config;
 pub mod context;
 mod event_handlers;
