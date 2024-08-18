@@ -183,11 +183,8 @@ impl<S> Context<S> {
         // https://github.com/rust-lang/rust/issues/110011
         let state = self.use_state(compute(states.get()).await);
 
-        let (state, _) = self
-            .computed_states
-            .add_computed_async(state, states, compute);
-
-        state
+        self.computed_states
+            .add_computed_async(state, states, compute, false)
     }
 
     #[track_caller]
@@ -218,15 +215,12 @@ impl<S> Context<S> {
             std::panic::Location::caller(),
         );
 
-        let (state, recompute) = self
-            .computed_states
-            .add_computed_async(state, states, compute);
-
-        if needs_recompute && self.in_websocket {
-            tokio::spawn(recompute());
-        }
-
-        state
+        self.computed_states.add_computed_async(
+            state,
+            states,
+            compute,
+            needs_recompute && self.in_websocket,
+        )
     }
 
     // TODO ideally, we would store a function that takes a type that impls Deserialize

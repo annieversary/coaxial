@@ -1,6 +1,7 @@
 use std::{collections::HashMap, fmt::Display, future::Future, pin::Pin, sync::Arc};
 
 use serde::de::DeserializeOwned;
+use tokio::task::JoinSet;
 
 use crate::{random_id::RandomId, state::State};
 
@@ -12,6 +13,8 @@ pub(crate) type OnChangeHandlerAsync =
 pub(crate) struct ComputedStates {
     on_change_handler: HashMap<RandomId, Vec<OnChangeHandler>>,
     on_change_handler_async: HashMap<RandomId, Vec<OnChangeHandlerAsync>>,
+
+    join_set: JoinSet<()>,
 }
 
 impl ComputedStates {
@@ -50,7 +53,8 @@ impl ComputedStates {
         state: State<O>,
         states: I,
         compute: F,
-    ) -> (ComputedState<O>, OnChangeHandlerAsync)
+        immediately_recompute: bool,
+    ) -> ComputedState<O>
     where
         O: DeserializeOwned + Display + Send + Sync + 'static,
         I: StateGetter,
@@ -76,11 +80,15 @@ impl ComputedStates {
             }
         }
 
-        (ComputedState(state), on_change_listener)
+        if immediately_recompute {
+            self.join_set.spawn(on_change_listener());
+        }
+
+        ComputedState(state)
     }
 
-    /// Recompute ComputedStates that depend on the state with id `id`
-    pub(crate) fn recompute_dependents(&self, id: RandomId) {
+    /// Recompute sync ComputedStates that depend on the state with id `id`
+    pub(crate) fn recompute_dependents(&mut self, id: RandomId) {
         if let Some(funcs) = self.on_change_handler.get(&id) {
             for func in funcs {
                 (*func)();
@@ -89,7 +97,7 @@ impl ComputedStates {
 
         if let Some(async_funcs) = self.on_change_handler_async.get(&id) {
             for func in async_funcs {
-                tokio::spawn((*func)());
+                self.join_set.spawn((*func)());
             }
         }
     }
@@ -154,5 +162,124 @@ where
 
     fn id_list(&self) -> impl Iterator<Item = RandomId> {
         [self.0.id, self.1.id].into_iter()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use crate::{computed::InitialValue, context::Context};
+
+    #[test]
+    fn test_u32_computed_state() {
+        let mut ctx = Context::<()>::new(0, true);
+
+        let state = ctx.use_state(0u32);
+
+        let computed = ctx.use_computed(state, |value| value + 1);
+
+        assert_eq!(1, computed.get());
+    }
+
+    #[test]
+    fn test_string_computed_state() {
+        let mut ctx = Context::<()>::new(0, true);
+
+        let state = ctx.use_state(0u32);
+
+        let computed = ctx.use_computed(state, |value| value.to_string());
+
+        assert_eq!("0", computed.get());
+    }
+
+    #[test]
+    fn test_string_computed_state_async_uses_initial_value() {
+        let mut ctx = Context::<()>::new(0, true);
+
+        let state = ctx.use_state(0u32);
+
+        let computed = ctx.use_computed_async_with(
+            state,
+            |value| async move { value.to_string() },
+            InitialValue::Value("initial".to_string()),
+        );
+
+        assert_eq!("initial", computed.get());
+    }
+
+    /// Using an async computed state with a ValueAndCompute causes the value to be immediately recomputed in the background
+    #[tokio::test]
+    async fn test_async_computed_state_immediate_recompute() {
+        let mut ctx = Context::<()>::new(0, true);
+
+        let state = ctx.use_state(0u32);
+        let computed = ctx.use_computed_async_with(
+            state,
+            |value| async move { value.to_string() },
+            InitialValue::ValueAndCompute("initial".to_string()),
+        );
+
+        assert_eq!("initial", computed.get());
+
+        ctx.computed_states
+            .join_set
+            .join_next()
+            .await
+            .unwrap()
+            .unwrap();
+
+        assert_eq!("0", computed.get());
+    }
+
+    #[tokio::test]
+    async fn test_async_computed_state() {
+        let mut ctx = Context::<()>::new(0, true);
+
+        let state = ctx.use_state(0u32);
+        let computed = ctx
+            .use_computed_async(state, |value| async move { value.to_string() })
+            .await;
+
+        assert_eq!("0", computed.get());
+    }
+
+    #[test]
+    fn test_sync_gets_recomputed() {
+        let mut ctx = Context::<()>::new(0, true);
+
+        let state = ctx.use_state(0u32);
+        let computed = ctx.use_computed(state, |value| value.to_string());
+
+        assert_eq!("0", computed.get());
+
+        state.set(1);
+
+        ctx.computed_states.recompute_dependents(state.id);
+
+        assert_eq!("1", computed.get());
+    }
+
+    #[tokio::test]
+    async fn test_async_gets_recomputed() {
+        let mut ctx = Context::<()>::new(0, true);
+
+        let state = ctx.use_state(0u32);
+        let computed = ctx.use_computed_async_with(
+            state,
+            |value| async move { value.to_string() },
+            InitialValue::Value("initial".to_string()),
+        );
+
+        state.set(1);
+
+        ctx.computed_states.recompute_dependents(state.id);
+
+        ctx.computed_states
+            .join_set
+            .join_next()
+            .await
+            .unwrap()
+            .unwrap();
+
+        assert_eq!("1", computed.get());
     }
 }
