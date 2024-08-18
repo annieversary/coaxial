@@ -6,18 +6,24 @@ use std::{
     collections::HashMap,
     fmt::{Display, Write},
     future::Future,
+    pin::Pin,
     sync::Arc,
 };
 use tokio::sync::mpsc::{unbounded_channel, UnboundedReceiver, UnboundedSender};
 
 use crate::{
     closure::{Closure, ClosureTrait, ClosureWrapper, Closures, IntoClosure},
+    computed::{ComputedState, StateGetter},
     event_handlers::{EventHandler, EventHandlerWrapper},
     html::{Content, ContentValue, Element},
     random_id::RandomId,
     state::{AnyState, State, StateInner},
     CoaxialResponse, Output,
 };
+
+type OnChangeHandler = Arc<dyn Fn() + 'static + Send + Sync>;
+type OnChangeHandlerAsync =
+    Arc<dyn Fn() -> Pin<Box<dyn Future<Output = ()> + Send + Sync>> + Send + Sync>;
 
 pub struct Context<S = ()> {
     pub(crate) rng: StdRng,
@@ -27,6 +33,9 @@ pub struct Context<S = ()> {
     pub(crate) states: HashMap<RandomId, Arc<dyn AnyState>>,
     pub(crate) closures: Closures<S>,
     pub(crate) event_handlers: HashMap<String, Arc<dyn EventHandler>>,
+
+    pub(crate) on_change_handler: HashMap<RandomId, Vec<OnChangeHandler>>,
+    pub(crate) on_change_handler_async: HashMap<RandomId, Vec<OnChangeHandlerAsync>>,
 
     pub(crate) changes_rx: UnboundedReceiver<(RandomId, String)>,
     changes_tx: UnboundedSender<(RandomId, String)>,
@@ -50,6 +59,9 @@ impl<S> Context<S> {
             states: Default::default(),
             closures: Default::default(),
             event_handlers: Default::default(),
+
+            on_change_handler: Default::default(),
+            on_change_handler_async: Default::default(),
 
             changes_rx,
             changes_tx,
@@ -99,6 +111,66 @@ impl<S> Context<S> {
         };
 
         self.states.insert(state.id, Arc::new(state));
+
+        state
+    }
+
+    // TODO move most of the contents of this function to an object defined in the computed file
+    pub fn use_computed<O, I, F>(&mut self, states: I, compute: F) -> ComputedState<O>
+    where
+        O: DeserializeOwned + Display + Send + Sync + 'static,
+        I: StateGetter + Send + Sync + 'static,
+        F: Fn(<I as StateGetter>::Output) -> O + Send + Sync + 'static,
+    {
+        let state = self.use_state(compute(states.get()));
+
+        let compute = Arc::new(compute);
+        for id in states.id_list() {
+            let compute = compute.clone();
+            let states = states.clone();
+            let on_change_listener = move || {
+                state.set(compute(states.get()));
+            };
+
+            if let Some(value) = self.on_change_handler.get_mut(&id) {
+                value.push(Arc::new(on_change_listener));
+            } else {
+                self.on_change_handler
+                    .insert(id, vec![Arc::new(on_change_listener)]);
+            }
+        }
+
+        ComputedState(state)
+    }
+
+    pub async fn use_computed_async<O, I, F, FUT>(&mut self, states: I, compute: F) -> State<O>
+    where
+        O: DeserializeOwned + Display + Send + Sync + 'static,
+        I: StateGetter,
+        F: Fn(<I as StateGetter>::Output) -> FUT + Send + Sync + 'static,
+        FUT: Future<Output = O> + Send + Sync + 'static,
+    {
+        let state = self.use_state(compute(states.get()).await);
+
+        let compute = Arc::new(compute);
+        for id in states.id_list() {
+            let compute = compute.clone();
+            let states = states.clone();
+            let on_change_listener: OnChangeHandlerAsync = Arc::new(move || {
+                let compute = compute.clone();
+                let states = states.clone();
+                Box::pin(async move {
+                    state.set(compute(states.get()).await);
+                })
+            });
+
+            if let Some(value) = self.on_change_handler_async.get_mut(&id) {
+                value.push(on_change_listener);
+            } else {
+                self.on_change_handler_async
+                    .insert(id, vec![on_change_listener]);
+            }
+        }
 
         state
     }

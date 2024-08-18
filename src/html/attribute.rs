@@ -2,6 +2,7 @@ use std::fmt::Display;
 
 use crate::{
     closure::Closure,
+    computed::ComputedState,
     random_id::RandomId,
     reactive_js::{Content, Reactivity, ReactivityDescriptor, Target},
     state::State,
@@ -246,6 +247,14 @@ where
         }
     }
 }
+impl<T> From<ComputedState<T>> for StateDescriptor
+where
+    T: Clone + Display + Send + Sync + 'static,
+{
+    fn from(value: ComputedState<T>) -> Self {
+        value.0.into()
+    }
+}
 #[derive(Debug, PartialEq, Eq)]
 pub struct ClosureDescriptor {
     pub(crate) closure_id: RandomId,
@@ -278,6 +287,14 @@ where
     T: Clone + Display + Send + Sync + 'static,
 {
     fn from(value: State<T>) -> Self {
+        AttributeValue::State(value.into())
+    }
+}
+impl<T> From<ComputedState<T>> for AttributeValue
+where
+    T: Clone + Display + Send + Sync + 'static,
+{
+    fn from(value: ComputedState<T>) -> Self {
         AttributeValue::State(value.into())
     }
 }

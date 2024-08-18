@@ -128,6 +128,19 @@ where
                                 let mut updates = Vec::new();
                                 std::mem::swap(&mut changes, &mut updates);
 
+                                // call on change events
+                                for (id, _) in &updates {
+                                    let Some(funcs) = context.on_change_handler.get(id) else {continue;};
+                                    for func in funcs {
+                                        (*func)();
+                                    }
+
+                                    let Some(async_funcs) = context.on_change_handler_async.get(id) else {continue;};
+                                    for func in async_funcs {
+                                        tokio::spawn((*func)());
+                                    }
+                                }
+
                                 let updates = updates.into_iter().map(|(id, v)| (id.to_string(), v)).collect::<Vec<_>>();
 
                                 let out = OutMessage::Update { fields: &updates };

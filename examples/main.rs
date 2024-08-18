@@ -62,6 +62,27 @@ async fn counter(mut ctx: Context) -> CoaxialResponse {
         clicks.set(clicks.get() + 1);
     });
 
+    let counter_plus_1 = ctx.use_computed(counter, move |counter: i32| {
+        // there's no actual need for this to be a string, it's just to showcase that the output can be anything
+        (counter + 1).to_string()
+    });
+
+    let delayed_update = ctx
+        .use_computed_async(counter, move |counter: i32| async move {
+            tokio::time::sleep(tokio::time::Duration::from_secs(3)).await;
+
+            counter
+        })
+        .await;
+
+    /*
+    TODO switch to a syntax like this?
+    ctx.computed(counter).with_value(0).async(|...| ...)
+    ctx.computed(counter).with_default(0).async(|...| ...)
+    ctx.computed(counter).with_computed().async(|...| ...)
+    computed is the default
+     */
+
     let element = div(
         Content::List(vec![
             div(
@@ -70,8 +91,7 @@ async fn counter(mut ctx: Context) -> CoaxialResponse {
                         "increment counter",
                         attrs!(
                             "onclick" => add,
-                            // TODO we should have a computed counter+1
-                            "title" => ("go from ",counter," to ",counter,"+1")
+                            "title" => ("go from ",counter," to ",counter_plus_1)
                         ),
                     )
                     .into(),
@@ -100,6 +120,14 @@ async fn counter(mut ctx: Context) -> CoaxialResponse {
                     counter.into(),
                 ]),
                 // counter,
+                Default::default(),
+            )
+            .into(),
+            p(
+                Content::List(vec![
+                    "this value is delayed by 3 seconds: ".into(),
+                    delayed_update.into(),
+                ]),
                 Default::default(),
             )
             .into(),
