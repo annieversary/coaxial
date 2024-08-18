@@ -280,7 +280,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_u32_state_in_closures() {
-        let mut ctx = Context::<()>::new(0);
+        let mut ctx = Context::<()>::new(0, true);
 
         let state = ctx.use_state(0u32);
 
@@ -299,7 +299,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_string_state_in_closures() {
-        let mut ctx = Context::<()>::new(0);
+        let mut ctx = Context::<()>::new(0, true);
 
         let state = ctx.use_state("my string".to_string());
 
