@@ -1,6 +1,6 @@
 use serde::de::{self, Deserialize, Deserializer, Visitor};
 
-pub fn struct_fields<'de, T>() -> &'static [&'static str]
+pub fn struct_fields<'de, T>() -> Option<&'static [&'static str]>
 where
     T: Deserialize<'de>,
 {
@@ -42,5 +42,5 @@ where
     let _ = T::deserialize(StructFieldsDeserializer {
         fields: &mut fields,
     });
-    fields.unwrap()
+    fields
 }

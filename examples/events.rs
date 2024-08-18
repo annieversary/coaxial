@@ -25,5 +25,10 @@ async fn counter(mut ctx: Context) -> CoaxialResponse {
         x.set(event.x);
     });
 
+    // multiple listeners can be added for the same event
+    ctx.on_client_event("click", move |event: MouseClick| async move {
+        println!("{}", event.x);
+    });
+
     ctx.with(p(x, Default::default()))
 }
