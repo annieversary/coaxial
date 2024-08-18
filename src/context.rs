@@ -12,7 +12,7 @@ use std::{
 use crate::{
     closures::{Closure, ClosureInner, ClosureTrait, ClosureWrapper, Closures, IntoClosure},
     computed::{ComputedState, ComputedStates, InitialValue, StateGetter},
-    event_handlers::Events,
+    events::Events,
     html::{Content, ContentValue, Element},
     random_id::RandomId,
     states::{State, StateInner, States},

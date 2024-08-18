@@ -10,7 +10,7 @@ mod closures;
 pub mod computed;
 pub mod config;
 pub mod context;
-mod event_handlers;
+mod events;
 mod handler;
 mod helpers;
 pub mod html;
