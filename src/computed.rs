@@ -45,7 +45,7 @@ impl ComputedStates {
         ComputedState(state)
     }
 
-    pub(crate) async fn add_computed_async<O, I, F, FUT>(
+    pub(crate) fn add_computed_async<O, I, F, FUT>(
         &mut self,
         state: State<O>,
         states: I,
@@ -81,25 +81,21 @@ impl ComputedStates {
 
     /// Recompute ComputedStates that depend on the state with id `id`
     pub(crate) fn recompute_dependents(&self, id: RandomId) {
-        let Some(funcs) = self.on_change_handler.get(&id) else {
-            return;
-        };
-        for func in funcs {
-            (*func)();
+        if let Some(funcs) = self.on_change_handler.get(&id) {
+            for func in funcs {
+                (*func)();
+            }
         }
 
-        let Some(async_funcs) = self.on_change_handler_async.get(&id) else {
-            return;
-        };
-        for func in async_funcs {
-            tokio::spawn((*func)());
+        if let Some(async_funcs) = self.on_change_handler_async.get(&id) {
+            for func in async_funcs {
+                tokio::spawn((*func)());
+            }
         }
     }
 }
 
 pub enum InitialValue<O> {
-    /// Initially compute the value with the provided closure, blocking.
-    Compute,
     /// Set the initial value.
     Value(O),
     /// Set the initial value, and recompute in the background.

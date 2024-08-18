@@ -1,7 +1,6 @@
 use axum::Router;
 use coaxial::{
     attrs,
-    computed::InitialValue,
     config::Config,
     context::Context,
     html::{body, button, div, head, html, p, strong, style, Content, ContentValue},
@@ -51,6 +50,7 @@ async fn counter(mut ctx: Context) -> CoaxialResponse {
     let clicks = ctx.use_state(0u32);
 
     let click = ctx.use_closure(move || async move {
+        tokio::time::sleep(tokio::time::Duration::from_secs(3)).await;
         clicks.set(clicks.get() + 1);
     });
 
@@ -67,18 +67,6 @@ async fn counter(mut ctx: Context) -> CoaxialResponse {
         // there's no actual need for this to be a string, it's just to showcase that the output can be anything
         (counter + 1).to_string()
     });
-
-    let delayed_update = ctx
-        .use_computed_async_with(
-            counter,
-            |counter: i32| async move {
-                tokio::time::sleep(tokio::time::Duration::from_secs(3)).await;
-
-                counter
-            },
-            InitialValue::ValueAndCompute(0),
-        )
-        .await;
 
     let element = div(
         Content::List(vec![
@@ -117,14 +105,6 @@ async fn counter(mut ctx: Context) -> CoaxialResponse {
                     counter.into(),
                 ]),
                 // counter,
-                Default::default(),
-            )
-            .into(),
-            p(
-                Content::List(vec![
-                    "this value is delayed by 3 seconds: ".into(),
-                    delayed_update.into(),
-                ]),
                 Default::default(),
             )
             .into(),

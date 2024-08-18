@@ -6,6 +6,7 @@ use std::{
     collections::HashMap,
     fmt::{Display, Write},
     future::Future,
+    panic::Location,
     sync::Arc,
 };
 use tokio::sync::mpsc::{unbounded_channel, UnboundedReceiver, UnboundedSender};
@@ -88,10 +89,12 @@ impl<S> Context<S> {
         }
     }
 
-    #[track_caller]
-    pub fn use_state<T: DeserializeOwned + Display + Send + Sync + 'static>(
+    pub fn use_state_inner<T: DeserializeOwned + Display + Send + Sync + 'static>(
         &mut self,
         value: T,
+        #[cfg(any(debug_assertions, feature = "debug_ownership"))] caller: &'static Location<
+            'static,
+        >,
     ) -> State<T> {
         let id = RandomId::from_rng(&mut self.rng);
         let state = State {
@@ -101,7 +104,7 @@ impl<S> Context<S> {
                     changes_tx: self.changes_tx.clone(),
                 },
                 #[cfg(any(debug_assertions, feature = "debug_ownership"))]
-                std::panic::Location::caller(),
+                caller,
             ),
             id,
         };
@@ -111,13 +114,29 @@ impl<S> Context<S> {
         state
     }
 
+    #[track_caller]
+    pub fn use_state<T: DeserializeOwned + Display + Send + Sync + 'static>(
+        &mut self,
+        value: T,
+    ) -> State<T> {
+        self.use_state_inner(
+            value,
+            #[cfg(any(debug_assertions, feature = "debug_ownership"))]
+            std::panic::Location::caller(),
+        )
+    }
+
     pub fn use_computed<O, I, F>(&mut self, states: I, compute: F) -> ComputedState<O>
     where
         O: DeserializeOwned + Display + Send + Sync + 'static,
         I: StateGetter + Send + Sync + 'static,
         F: Fn(<I as StateGetter>::Output) -> O + Send + Sync + 'static,
     {
-        let state = self.use_state(compute(states.get()));
+        let state = self.use_state_inner(
+            compute(states.get()),
+            #[cfg(any(debug_assertions, feature = "debug_ownership"))]
+            std::panic::Location::caller(),
+        );
 
         self.computed_states.add_computed(state, states, compute)
     }
@@ -134,14 +153,17 @@ impl<S> Context<S> {
         F: Fn(<I as StateGetter>::Output) -> O + Send + Sync + 'static,
     {
         let initial = match initial {
-            InitialValue::Compute => compute(states.get()),
             InitialValue::Value(value) => value,
             // it's a blocking function, so we can't run it in the background.
             // we just recompute and ignore the provided value
             InitialValue::ValueAndCompute(_value) => compute(states.get()),
         };
 
-        let state = self.use_state(initial);
+        let state = self.use_state_inner(
+            initial,
+            #[cfg(any(debug_assertions, feature = "debug_ownership"))]
+            std::panic::Location::caller(),
+        );
 
         self.computed_states.add_computed(state, states, compute)
     }
@@ -157,17 +179,19 @@ impl<S> Context<S> {
         F: Fn(<I as StateGetter>::Output) -> FUT + Send + Sync + 'static,
         FUT: Future<Output = O> + Send + Sync + 'static,
     {
+        // no tracking caller cause this function is async and track_caller doesn't work on async functions yet
+        // https://github.com/rust-lang/rust/issues/110011
         let state = self.use_state(compute(states.get()).await);
 
         let (state, _) = self
             .computed_states
-            .add_computed_async(state, states, compute)
-            .await;
+            .add_computed_async(state, states, compute);
 
         state
     }
 
-    pub async fn use_computed_async_with<O, I, F, FUT>(
+    #[track_caller]
+    pub fn use_computed_async_with<O, I, F, FUT>(
         &mut self,
         states: I,
         compute: F,
@@ -181,7 +205,6 @@ impl<S> Context<S> {
     {
         let mut needs_recompute = false;
         let initial = match initial {
-            InitialValue::Compute => compute(states.get()).await,
             InitialValue::Value(value) => value,
             InitialValue::ValueAndCompute(value) => {
                 needs_recompute = true;
@@ -189,12 +212,15 @@ impl<S> Context<S> {
             }
         };
 
-        let state = self.use_state(initial);
+        let state = self.use_state_inner(
+            initial,
+            #[cfg(any(debug_assertions, feature = "debug_ownership"))]
+            std::panic::Location::caller(),
+        );
 
         let (state, recompute) = self
             .computed_states
-            .add_computed_async(state, states, compute)
-            .await;
+            .add_computed_async(state, states, compute);
 
         if needs_recompute && self.in_websocket {
             tokio::spawn(recompute());
