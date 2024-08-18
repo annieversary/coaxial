@@ -15,7 +15,7 @@ use crate::{
     event_handlers::Events,
     html::{Content, ContentValue, Element},
     random_id::RandomId,
-    state::{State, StateInner, States},
+    states::{State, StateInner, States},
     CoaxialResponse, Output,
 };
 

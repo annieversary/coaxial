@@ -14,7 +14,7 @@ use tokio::{select, sync::mpsc::UnboundedSender};
 
 use crate::{
     config::Config, context::Context, event_handlers::Events, handler::CoaxialHandler,
-    html::DOCTYPE_HTML, random_id::RandomId, reactive_js::Reactivity, state::States,
+    html::DOCTYPE_HTML, random_id::RandomId, reactive_js::Reactivity, states::States,
 };
 
 pub fn live<T, H, S>(handler: H) -> MethodRouter<S>

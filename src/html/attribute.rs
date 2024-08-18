@@ -5,7 +5,7 @@ use crate::{
     computed::ComputedState,
     random_id::RandomId,
     reactive_js::{Content, Reactivity, ReactivityDescriptor, Target},
-    state::State,
+    states::State,
 };
 
 #[derive(Default, Debug, PartialEq, Eq)]

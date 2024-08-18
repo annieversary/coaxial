@@ -4,7 +4,7 @@ use crate::{
     computed::ComputedState,
     random_id::RandomId,
     reactive_js::{Content as ReactiveContent, Reactivity, ReactivityDescriptor, Target},
-    state::State,
+    states::State,
 };
 
 use super::{attribute::StateDescriptor, element::Element};

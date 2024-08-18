@@ -3,7 +3,7 @@ use std::{collections::HashMap, fmt::Display, future::Future, pin::Pin, sync::Ar
 use serde::de::DeserializeOwned;
 use tokio::task::JoinSet;
 
-use crate::{random_id::RandomId, state::State};
+use crate::{random_id::RandomId, states::State};
 
 pub(crate) type OnChangeHandler = Arc<dyn Fn() + 'static + Send + Sync>;
 pub(crate) type OnChangeHandlerAsync =
