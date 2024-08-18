@@ -1,21 +1,35 @@
 use axum::{extract::FromRequestParts, http::request::Parts};
 use generational_box::{GenerationalBox, SyncStorage};
 use std::{collections::HashMap, future::Future, marker::PhantomData, pin::Pin, sync::Arc};
-use tokio::sync::mpsc::UnboundedSender;
+use tokio::{sync::mpsc::UnboundedSender, task::JoinSet};
 
 use crate::random_id::RandomId;
 
 pub(crate) struct Closures<S> {
     closures: HashMap<RandomId, Arc<dyn ClosureTrait<S>>>,
+
+    join_set: JoinSet<()>,
 }
 
 impl<S> Closures<S> {
     pub(crate) fn insert(&mut self, id: RandomId, closure: Arc<dyn ClosureTrait<S>>) {
         self.closures.insert(id, closure);
     }
+}
 
-    pub fn get(&self, id: RandomId) -> Option<&Arc<dyn ClosureTrait<S>>> {
-        self.closures.get(&id)
+impl<S: Clone + Send + 'static> Closures<S> {
+    pub(crate) fn run(&mut self, id: RandomId, parts: &Parts, state: &S) {
+        let Some(closure) = self.closures.get(&id) else {
+            // this is a fatal error
+            return;
+        };
+
+        let closure = closure.clone();
+        let parts = parts.clone();
+        let state = state.clone();
+
+        self.join_set
+            .spawn(async move { closure.call(parts, state).await });
     }
 }
 
@@ -23,6 +37,7 @@ impl<S> Default for Closures<S> {
     fn default() -> Self {
         Self {
             closures: Default::default(),
+            join_set: Default::default(),
         }
     }
 }
@@ -34,7 +49,7 @@ pub struct Closure {
 }
 
 pub(crate) struct ClosureInner {
-    pub(crate) closure_call_tx: UnboundedSender<Closure>,
+    pub(crate) closure_call_tx: UnboundedSender<RandomId>,
 }
 
 impl Closure {
@@ -43,25 +58,21 @@ impl Closure {
     /// Note: this doesn't call the closure immediately.
     /// Keep in mind, the closure will not be run until the websocket connection has been established.
     pub fn call(&self) {
-        self.inner
-            .read()
-            .closure_call_tx
-            .send(self.clone())
-            .unwrap();
+        self.inner.read().closure_call_tx.send(self.id).unwrap();
     }
 }
 
 /// Trait used to type-erase all closures, so they can be stored in the same HashMap
 pub trait ClosureTrait<S>: Send + Sync {
-    fn call<'a>(&'a self, parts: Parts, state: S) -> Pin<Box<dyn Future<Output = ()> + 'a>>;
+    fn call<'a>(&'a self, parts: Parts, state: S) -> Pin<Box<dyn Future<Output = ()> + Send + 'a>>;
 }
 
 impl<S, F, Fut> ClosureTrait<S> for ClosureWrapper<F, ()>
 where
     F: Fn() -> Fut + Send + Sync,
-    Fut: Future<Output = ()> + 'static,
+    Fut: Future<Output = ()> + Send + Sync + 'static,
 {
-    fn call(&self, _parts: Parts, _state: S) -> Pin<Box<dyn Future<Output = ()> + 'static>> {
+    fn call(&self, _parts: Parts, _state: S) -> Pin<Box<dyn Future<Output = ()> + Send + 'static>> {
         Box::pin((self.func)())
     }
 }
@@ -74,15 +85,15 @@ macro_rules! impl_closure_trait {
         impl<S, F, Fut, $($ty,)*> ClosureTrait<S> for ClosureWrapper<F, ($($ty,)*)>
         where
             F: Fn($($ty,)*) -> Fut + Send + Sync,
-            Fut: Future<Output = ()> + 'static,
+            Fut: Future<Output = ()> + Send + Sync + 'static,
         $( $ty: FromRequestParts<S> + Send + Sync, )*
-            S: 'static
+            S: Send + Sync + 'static
         {
             fn call<'a>(
                 &'a self,
                 mut parts: Parts,
                 state: S,
-            ) -> Pin<Box<dyn Future<Output = ()> + 'a>> {
+            ) -> Pin<Box<dyn Future<Output = ()> + Send + 'a>> {
                 Box::pin(async move {
                     $(
                         let $ty = match $ty::from_request_parts(&mut parts, &state).await {
@@ -158,3 +169,52 @@ macro_rules! all_the_tuples {
 
 all_the_tuples!(impl_closure_trait);
 all_the_tuples!(impl_into_closure);
+
+#[cfg(test)]
+mod tests {
+    use axum::http::{request::Parts, Request};
+
+    use crate::context::Context;
+
+    fn parts() -> Parts {
+        let req = Request::new(());
+        let (parts, _) = req.into_parts();
+        parts
+    }
+
+    #[tokio::test]
+    async fn test_update_u32_state_in_closure() {
+        let mut ctx = Context::<()>::new(0, true);
+
+        let state = ctx.use_state(0u32);
+
+        let closure = ctx.use_closure(move || async move {
+            state.set(1);
+        });
+
+        // we run the closure manually, not by calling call
+        // call relies on the websocket loop to be running
+        ctx.closures.run(closure.id, &parts(), &());
+        ctx.closures.join_set.join_next().await.unwrap().unwrap();
+
+        assert_eq!(1, state.get());
+    }
+
+    #[tokio::test]
+    async fn test_update_string_state_in_closure() {
+        let mut ctx = Context::<()>::new(0, true);
+
+        let state = ctx.use_state("my string".to_string());
+
+        let closure = ctx.use_closure(move || async move {
+            state.set("other string".to_string());
+        });
+
+        // we run the closure manually, not by calling call
+        // call relies on the websocket loop to be running
+        ctx.closures.run(closure.id, &parts(), &());
+        ctx.closures.join_set.join_next().await.unwrap().unwrap();
+
+        assert_eq!("other string", state.get());
+    }
+}

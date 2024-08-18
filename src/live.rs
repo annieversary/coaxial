@@ -6,24 +6,16 @@ use axum::{
         ws::{Message, WebSocket},
         FromRequestParts, Query, Request, WebSocketUpgrade,
     },
-    http::request::Parts,
     routing::{get, MethodRouter},
     Extension,
 };
 use rand::random;
-use tokio::select;
+use tokio::{select, sync::mpsc::UnboundedSender};
 use tokio_util::task::LocalPoolHandle;
 
 use crate::{
-    closure::{Closure, Closures},
-    config::Config,
-    context::Context,
-    event_handlers::EventHandler,
-    handler::CoaxialHandler,
-    html::DOCTYPE_HTML,
-    random_id::RandomId,
-    reactive_js::Reactivity,
-    state::AnyState,
+    config::Config, context::Context, event_handlers::EventHandler, handler::CoaxialHandler,
+    html::DOCTYPE_HTML, random_id::RandomId, reactive_js::Reactivity, state::AnyState,
 };
 
 pub fn live<T, H, S>(handler: H) -> MethodRouter<S>
@@ -112,10 +104,8 @@ where
                                 let res = handle_socket_message(
                                     msg.map_err(|_| ()),
                                     &pool,
-                                    request_parts.clone(),
-                                    state.clone(),
                                     &context.states,
-                                    &context.closures,
+                                    &context.closure_call_tx,
                                     &context.event_handlers,
                                 )
                                     .await;
@@ -141,20 +131,11 @@ where
                                 socket.send(msg).await.unwrap();
                             }
                             _ = context.closure_call_rx.recv_many(&mut closure_calls, 10000) => {
-                                let mut closures: Vec<Closure> = Vec::new();
+                                let mut closures: Vec<RandomId> = Vec::new();
                                 std::mem::swap(&mut closures, &mut closure_calls);
 
                                 for closure in  &closures {
-                                    let Some(closure) = context.closures.get(closure.id) else {
-                                        // this is a fatal error
-                                        return;
-                                    };
-
-                                    let closure = closure.clone();
-                                    let parts = request_parts.clone();
-                                    let state = state.clone();
-                                    let closure = move || async move { closure.call(parts, state).await };
-                                    pool.spawn_pinned(closure).await.unwrap();
+                                    context.closures.run(*closure, &request_parts, &state);
                                 }
                             }
                         }
@@ -173,13 +154,11 @@ enum SocketError {
     SkipMessage,
 }
 
-async fn handle_socket_message<S: Clone + Send + Sync + 'static>(
+async fn handle_socket_message(
     msg: Result<Message, ()>,
     pool: &LocalPoolHandle,
-    parts: Parts,
-    state: S,
     states: &States,
-    closures: &Closures<S>,
+    closure_call_tx: &UnboundedSender<RandomId>,
     events: &EventHandlers,
 ) -> Result<(), SocketError> {
     let msg: InMessage = match msg {
@@ -195,13 +174,7 @@ async fn handle_socket_message<S: Clone + Send + Sync + 'static>(
 
     match msg {
         InMessage::Closure { closure } => {
-            let Some(closure) = closures.get(closure) else {
-                return Err(SocketError::Fatal);
-            };
-
-            let closure = closure.clone();
-            let closure = move || async move { closure.call(parts, state).await };
-            pool.spawn_pinned(closure).await.unwrap();
+            closure_call_tx.send(closure).unwrap();
         }
         InMessage::Event { name, params } => {
             let Some(event) = events.get(&name) else {

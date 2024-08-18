@@ -37,8 +37,8 @@ pub struct Context<S = ()> {
     pub(crate) changes_rx: UnboundedReceiver<(RandomId, String)>,
     changes_tx: UnboundedSender<(RandomId, String)>,
 
-    pub(crate) closure_call_rx: UnboundedReceiver<Closure>,
-    closure_call_tx: UnboundedSender<Closure>,
+    pub(crate) closure_call_rx: UnboundedReceiver<RandomId>,
+    pub(crate) closure_call_tx: UnboundedSender<RandomId>,
 }
 
 impl<S> Context<S> {
@@ -285,56 +285,5 @@ impl<S> Context<S> {
             )),
             Default::default(),
         )
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use axum::http::{request::Parts, Request};
-
-    use super::*;
-
-    fn parts() -> Parts {
-        let req = Request::new(());
-        let (parts, _) = req.into_parts();
-        parts
-    }
-
-    #[tokio::test]
-    async fn test_u32_state_in_closures() {
-        let mut ctx = Context::<()>::new(0, true);
-
-        let state = ctx.use_state(0u32);
-
-        let closure = ctx.use_closure(move || async move {
-            state.set(1);
-        });
-
-        // we run the closure manually, not by calling call
-        // call relies on the websocket loop to be running
-        let func = ctx.closures.get(closure.id).unwrap();
-
-        func.call(parts(), ()).await;
-
-        assert_eq!(1, state.get());
-    }
-
-    #[tokio::test]
-    async fn test_string_state_in_closures() {
-        let mut ctx = Context::<()>::new(0, true);
-
-        let state = ctx.use_state("my string".to_string());
-
-        let closure = ctx.use_closure(move || async move {
-            state.set("other string".to_string());
-        });
-
-        // we run the closure manually, not by calling call
-        // call relies on the websocket loop to be running
-        let func = ctx.closures.get(closure.id).unwrap();
-
-        func.call(parts(), ()).await;
-
-        assert_eq!("other string", state.get());
     }
 }

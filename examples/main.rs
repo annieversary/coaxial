@@ -50,14 +50,11 @@ async fn counter(mut ctx: Context) -> CoaxialResponse {
     let clicks = ctx.use_state(0u32);
 
     let click = ctx.use_closure(move || async move {
-        tokio::time::sleep(tokio::time::Duration::from_secs(3)).await;
         clicks.set(clicks.get() + 1);
     });
 
     let add = ctx.use_closure(move || async move {
         counter.set(counter.get() + 1);
-
-        tokio::time::sleep(tokio::time::Duration::from_secs(3)).await;
 
         click.call();
     });
