@@ -11,10 +11,9 @@ use axum::{
 };
 use rand::random;
 use tokio::{select, sync::mpsc::UnboundedSender};
-use tokio_util::task::LocalPoolHandle;
 
 use crate::{
-    config::Config, context::Context, event_handlers::EventHandler, handler::CoaxialHandler,
+    config::Config, context::Context, event_handlers::Events, handler::CoaxialHandler,
     html::DOCTYPE_HTML, random_id::RandomId, reactive_js::Reactivity, state::AnyState,
 };
 
@@ -89,7 +88,6 @@ where
                     let (_parts, body) = response.into_parts();
 
                     let mut context = body.context;
-                    let pool = LocalPoolHandle::new(5);
 
                     let mut changes = Vec::new();
                     let mut closure_calls = Vec::new();
@@ -103,10 +101,9 @@ where
 
                                 let res = handle_socket_message(
                                     msg.map_err(|_| ()),
-                                    &pool,
                                     &context.states,
                                     &context.closure_call_tx,
-                                    &context.event_handlers,
+                                    &mut context.events,
                                 )
                                     .await;
 
@@ -146,7 +143,6 @@ where
     )
 }
 
-type EventHandlers = std::collections::HashMap<String, Arc<dyn EventHandler>>;
 type States = std::collections::HashMap<RandomId, Arc<dyn AnyState>>;
 
 enum SocketError {
@@ -156,10 +152,9 @@ enum SocketError {
 
 async fn handle_socket_message(
     msg: Result<Message, ()>,
-    pool: &LocalPoolHandle,
     states: &States,
     closure_call_tx: &UnboundedSender<RandomId>,
-    events: &EventHandlers,
+    events: &mut Events,
 ) -> Result<(), SocketError> {
     let msg: InMessage = match msg {
         Ok(Message::Text(msg)) => serde_json::from_str(&msg).unwrap(),
@@ -177,12 +172,7 @@ async fn handle_socket_message(
             closure_call_tx.send(closure).unwrap();
         }
         InMessage::Event { name, params } => {
-            let Some(event) = events.get(&name) else {
-                return Err(SocketError::Fatal);
-            };
-
-            let event = event.clone();
-            pool.spawn_pinned(move || event.call(params)).await.unwrap();
+            events.handle(name, params);
         }
         InMessage::SetState { id, value } => {
             // get the state and set it

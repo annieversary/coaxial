@@ -14,7 +14,7 @@ use tokio::sync::mpsc::{unbounded_channel, UnboundedReceiver, UnboundedSender};
 use crate::{
     closure::{Closure, ClosureInner, ClosureTrait, ClosureWrapper, Closures, IntoClosure},
     computed::{ComputedState, ComputedStates, InitialValue, StateGetter},
-    event_handlers::{EventHandler, EventHandlerWrapper},
+    event_handlers::Events,
     html::{Content, ContentValue, Element},
     random_id::RandomId,
     state::{AnyState, State, StateInner},
@@ -29,8 +29,8 @@ pub struct Context<S = ()> {
 
     state_owner: Owner<SyncStorage>,
     pub(crate) states: HashMap<RandomId, Arc<dyn AnyState>>,
-    pub(crate) event_handlers: HashMap<String, Arc<dyn EventHandler>>,
 
+    pub(crate) events: Events,
     pub(crate) closures: Closures<S>,
     pub(crate) computed_states: ComputedStates,
 
@@ -55,8 +55,8 @@ impl<S> Context<S> {
 
             state_owner: <SyncStorage as AnyStorage>::owner(),
             states: Default::default(),
-            event_handlers: Default::default(),
 
+            events: Default::default(),
             closures: Default::default(),
             computed_states: Default::default(),
 
@@ -225,18 +225,13 @@ impl<S> Context<S> {
         )
     }
 
-    // TODO ideally, we would store a function that takes a type that impls Deserialize
-    // idk how to do it with multiple functions tho
-    pub fn on<F, Fut, P>(&mut self, name: impl ToString, closure: F)
+    pub fn on_client_event<F, Fut, P>(&mut self, name: impl ToString, closure: F)
     where
         F: Fn(P) -> Fut + Send + Sync + 'static,
         Fut: Future<Output = ()> + Send + Sync + 'static,
         P: serde::de::DeserializeOwned + Send + Sync + 'static,
     {
-        self.event_handlers.insert(
-            name.to_string(),
-            Arc::new(EventHandlerWrapper::new(closure)),
-        );
+        self.events.add(name.to_string(), closure);
     }
 
     pub fn with(self, element: Element) -> CoaxialResponse<S> {
@@ -252,7 +247,7 @@ impl<S> Context<S> {
             .to_string()
             .replace("__internal__coaxialSeed", &self.rng_seed.to_string());
 
-        for (name, handler) in &self.event_handlers {
+        for (name, fields) in self.events.list() {
             script.push_str("document.addEventListener('");
             script.push_str(name);
             script.push_str("', params=>{params={");
@@ -260,7 +255,7 @@ impl<S> Context<S> {
             // NOTE: this serves two puposes:
             // 1. events are big objects with lots of fields, so we only wanna send the ones we care about over the wire
             // 2. serialization of events is wonky, and a lot of times fields are not set correctly
-            for field in handler.param_fields() {
+            for field in fields {
                 script.push_str(field);
                 script.push_str(": params.");
                 script.push_str(field);

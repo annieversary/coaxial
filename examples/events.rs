@@ -21,7 +21,7 @@ async fn counter(mut ctx: Context) -> CoaxialResponse {
     }
 
     // this is a global event, applies to document
-    ctx.on("click", move |event: MouseClick| async move {
+    ctx.on_client_event("click", move |event: MouseClick| async move {
         x.set(event.x);
     });
 
