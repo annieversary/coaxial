@@ -19,8 +19,6 @@ pub(crate) struct Events {
 }
 
 impl Events {
-    // TODO ideally, we would store a function that takes a type that impls Deserialize
-    // idk how to do it with multiple functions tho
     pub(crate) fn add<F, Fut, P>(&mut self, name: String, closure: F)
     where
         F: Fn(P) -> Fut + Send + Sync + 'static,
@@ -65,6 +63,7 @@ impl Events {
         }
     }
 
+    /// Returns a descriptor of the events that are listened to and the fields each have
     pub(crate) fn list(&self) -> impl Iterator<Item = (&str, impl Iterator<Item = &str>)> {
         self.events
             .iter()

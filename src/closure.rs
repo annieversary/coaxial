@@ -1,12 +1,18 @@
 use axum::{extract::FromRequestParts, http::request::Parts};
 use generational_box::{GenerationalBox, SyncStorage};
 use std::{collections::HashMap, future::Future, marker::PhantomData, pin::Pin, sync::Arc};
-use tokio::{sync::mpsc::UnboundedSender, task::JoinSet};
+use tokio::{
+    sync::mpsc::{unbounded_channel, UnboundedReceiver, UnboundedSender},
+    task::JoinSet,
+};
 
 use crate::random_id::RandomId;
 
 pub(crate) struct Closures<S> {
     closures: HashMap<RandomId, Arc<dyn ClosureTrait<S>>>,
+
+    pub(crate) call_rx: UnboundedReceiver<RandomId>,
+    pub(crate) call_tx: UnboundedSender<RandomId>,
 
     join_set: JoinSet<()>,
 }
@@ -35,8 +41,12 @@ impl<S: Clone + Send + 'static> Closures<S> {
 
 impl<S> Default for Closures<S> {
     fn default() -> Self {
+        let (call_tx, call_rx) = unbounded_channel();
+
         Self {
             closures: Default::default(),
+            call_rx,
+            call_tx,
             join_set: Default::default(),
         }
     }

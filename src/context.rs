@@ -36,15 +36,11 @@ pub struct Context<S = ()> {
 
     pub(crate) changes_rx: UnboundedReceiver<(RandomId, String)>,
     changes_tx: UnboundedSender<(RandomId, String)>,
-
-    pub(crate) closure_call_rx: UnboundedReceiver<RandomId>,
-    pub(crate) closure_call_tx: UnboundedSender<RandomId>,
 }
 
 impl<S> Context<S> {
     pub(crate) fn new(seed: u64, in_websocket: bool) -> Self {
         let (changes_tx, changes_rx) = unbounded_channel();
-        let (closure_call_tx, closure_call_rx) = unbounded_channel();
 
         let rng = StdRng::seed_from_u64(seed);
 
@@ -62,8 +58,6 @@ impl<S> Context<S> {
 
             changes_rx,
             changes_tx,
-            closure_call_rx,
-            closure_call_tx,
         }
     }
 
@@ -83,7 +77,7 @@ impl<S> Context<S> {
             id,
             inner: self.state_owner.insert_with_caller(
                 ClosureInner {
-                    closure_call_tx: self.closure_call_tx.clone(),
+                    closure_call_tx: self.closures.call_tx.clone(),
                 },
                 #[cfg(any(debug_assertions, feature = "debug_ownership"))]
                 std::panic::Location::caller(),

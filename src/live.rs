@@ -102,7 +102,7 @@ where
                                 let res = handle_socket_message(
                                     msg.map_err(|_| ()),
                                     &context.states,
-                                    &context.closure_call_tx,
+                                    &context.closures.call_tx,
                                     &mut context.events,
                                 )
                                     .await;
@@ -127,7 +127,7 @@ where
                                 let msg = axum::extract::ws::Message::Text(serde_json::to_string(&out).unwrap());
                                 socket.send(msg).await.unwrap();
                             }
-                            _ = context.closure_call_rx.recv_many(&mut closure_calls, 10000) => {
+                            _ = context.closures.call_rx.recv_many(&mut closure_calls, 10000) => {
                                 let mut closures: Vec<RandomId> = Vec::new();
                                 std::mem::swap(&mut closures, &mut closure_calls);
 
