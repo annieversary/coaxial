@@ -112,11 +112,12 @@ impl<S> Context<S> {
         )
     }
 
+    #[track_caller]
     pub fn use_computed<O, I, F>(&mut self, states: I, compute: F) -> ComputedState<O>
     where
         O: DeserializeOwned + Display + Send + Sync + 'static,
         I: StateGetter + Send + Sync + 'static,
-        F: Fn(<I as StateGetter>::Output) -> O + Send + Sync + 'static,
+        F: Fn(<I as StateGetter>::Output<'_>) -> O + Send + Sync + 'static,
     {
         let state = self.use_state_inner(
             compute(states.get()),
@@ -127,6 +128,7 @@ impl<S> Context<S> {
         self.computed_states.add_computed(state, states, compute)
     }
 
+    #[track_caller]
     pub fn use_computed_with<O, I, F>(
         &mut self,
         states: I,
@@ -136,7 +138,7 @@ impl<S> Context<S> {
     where
         O: DeserializeOwned + Display + Send + Sync + 'static,
         I: StateGetter + Send + Sync + 'static,
-        F: Fn(<I as StateGetter>::Output) -> O + Send + Sync + 'static,
+        F: Fn(<I as StateGetter>::Output<'_>) -> O + Send + Sync + 'static,
     {
         let initial = match initial {
             InitialValue::Value(value) => value,
@@ -162,7 +164,7 @@ impl<S> Context<S> {
     where
         O: DeserializeOwned + Display + Send + Sync + 'static,
         I: StateGetter,
-        F: Fn(<I as StateGetter>::Output) -> FUT + Send + Sync + 'static,
+        F: Fn(<I as StateGetter>::Output<'_>) -> FUT + Send + Sync + 'static,
         FUT: Future<Output = O> + Send + Sync + 'static,
     {
         // no tracking caller cause this function is async and track_caller doesn't work on async functions yet
@@ -183,7 +185,7 @@ impl<S> Context<S> {
     where
         O: DeserializeOwned + Display + Send + Sync + 'static,
         I: StateGetter,
-        F: Fn(<I as StateGetter>::Output) -> FUT + Send + Sync + 'static,
+        F: Fn(<I as StateGetter>::Output<'_>) -> FUT + Send + Sync + 'static,
         FUT: Future<Output = O> + Send + Sync + 'static,
     {
         let mut needs_recompute = false;

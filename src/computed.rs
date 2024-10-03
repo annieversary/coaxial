@@ -3,7 +3,10 @@ use std::{collections::HashMap, fmt::Display, future::Future, pin::Pin, sync::Ar
 use serde::de::DeserializeOwned;
 use tokio::task::JoinSet;
 
-use crate::{random_id::RandomId, states::State};
+use crate::{
+    random_id::RandomId,
+    states::{State, StateGet},
+};
 
 pub(crate) type OnChangeHandler = Arc<dyn Fn() + 'static + Send + Sync>;
 pub(crate) type OnChangeHandlerAsync =
@@ -28,7 +31,7 @@ impl ComputedStates {
     where
         O: DeserializeOwned + Display + Send + Sync + 'static,
         I: StateGetter + Send + Sync + 'static,
-        F: Fn(<I as StateGetter>::Output) -> O + Send + Sync + 'static,
+        F: Fn(<I as StateGetter>::Output<'_>) -> O + Send + Sync + 'static,
     {
         let compute = Arc::new(compute);
         for id in states.id_list() {
@@ -59,7 +62,7 @@ impl ComputedStates {
     where
         O: DeserializeOwned + Display + Send + Sync + 'static,
         I: StateGetter,
-        F: Fn(<I as StateGetter>::Output) -> FUT + Send + Sync + 'static,
+        F: Fn(<I as StateGetter>::Output<'_>) -> FUT + Send + Sync + 'static,
         FUT: Future<Output = O> + Send + Sync + 'static,
     {
         let compute = Arc::new(compute);
@@ -125,23 +128,23 @@ impl<T: 'static> Clone for ComputedState<T> {
 impl<T: 'static> Copy for ComputedState<T> {}
 
 impl<T: Clone + Send + Sync + 'static> ComputedState<T> {
-    pub fn get(&self) -> T {
+    pub fn get(&self) -> StateGet<'_, T> {
         self.0.get()
     }
 }
 
 pub trait StateGetter: Clone + Send + Sync + 'static {
-    type Output;
+    type Output<'a>;
 
-    fn get(&self) -> Self::Output;
+    fn get(&self) -> Self::Output<'_>;
 
     fn id_list(&self) -> impl Iterator<Item = RandomId>;
 }
 
 impl<T: Clone + Send + Sync + 'static> StateGetter for State<T> {
-    type Output = T;
+    type Output<'a> = StateGet<'a, T>;
 
-    fn get(&self) -> Self::Output {
+    fn get(&self) -> Self::Output<'_> {
         State::get(self)
     }
 
@@ -150,14 +153,15 @@ impl<T: Clone + Send + Sync + 'static> StateGetter for State<T> {
     }
 }
 
+// TODO add more tuples
 impl<T, U> StateGetter for (State<T>, State<U>)
 where
     T: Clone + Send + Sync + 'static,
     U: Clone + Send + Sync + 'static,
 {
-    type Output = (T, U);
+    type Output<'a> = (StateGet<'a, T>, StateGet<'a, U>);
 
-    fn get(&self) -> Self::Output {
+    fn get(&self) -> Self::Output<'_> {
         (State::get(&self.0), State::get(&self.1))
     }
 
@@ -176,9 +180,9 @@ mod tests {
 
         let state = ctx.use_state(0u32);
 
-        let computed = ctx.use_computed(state, |value| value + 1);
+        let computed = ctx.use_computed(state, |value| *value + 1);
 
-        assert_eq!(1, computed.get());
+        assert_eq!(1, *computed.get());
     }
 
     #[test]
@@ -189,7 +193,7 @@ mod tests {
 
         let computed = ctx.use_computed(state, |value| value.to_string());
 
-        assert_eq!("0", computed.get());
+        assert_eq!("0", *computed.get());
     }
 
     #[test]
@@ -200,11 +204,14 @@ mod tests {
 
         let computed = ctx.use_computed_async_with(
             state,
-            |value| async move { value.to_string() },
+            |value| {
+                let value = value.to_string();
+                async move { value }
+            },
             InitialValue::Value("initial".to_string()),
         );
 
-        assert_eq!("initial", computed.get());
+        assert_eq!("initial", *computed.get());
     }
 
     /// Using an async computed state with a ValueAndCompute causes the value to be immediately recomputed in the background
@@ -215,11 +222,14 @@ mod tests {
         let state = ctx.use_state(0u32);
         let computed = ctx.use_computed_async_with(
             state,
-            |value| async move { value.to_string() },
+            |value| {
+                let value = value.to_string();
+                async move { value }
+            },
             InitialValue::ValueAndCompute("initial".to_string()),
         );
 
-        assert_eq!("initial", computed.get());
+        assert_eq!("initial", *computed.get());
 
         ctx.computed_states
             .join_set
@@ -228,7 +238,7 @@ mod tests {
             .unwrap()
             .unwrap();
 
-        assert_eq!("0", computed.get());
+        assert_eq!("0", *computed.get());
     }
 
     #[tokio::test]
@@ -237,10 +247,13 @@ mod tests {
 
         let state = ctx.use_state(0u32);
         let computed = ctx
-            .use_computed_async(state, |value| async move { value.to_string() })
+            .use_computed_async(state, |value| {
+                let value = value.to_string();
+                async move { value }
+            })
             .await;
 
-        assert_eq!("0", computed.get());
+        assert_eq!("0", *computed.get());
     }
 
     #[test]
@@ -250,13 +263,13 @@ mod tests {
         let state = ctx.use_state(0u32);
         let computed = ctx.use_computed(state, |value| value.to_string());
 
-        assert_eq!("0", computed.get());
+        assert_eq!("0", *computed.get());
 
         state.set(1);
 
         ctx.computed_states.recompute_dependents(state.id);
 
-        assert_eq!("1", computed.get());
+        assert_eq!("1", *computed.get());
     }
 
     #[tokio::test]
@@ -266,7 +279,10 @@ mod tests {
         let state = ctx.use_state(0u32);
         let computed = ctx.use_computed_async_with(
             state,
-            |value| async move { value.to_string() },
+            |value| {
+                let value = value.to_string();
+                async move { value }
+            },
             InitialValue::Value("initial".to_string()),
         );
 
@@ -281,6 +297,6 @@ mod tests {
             .unwrap()
             .unwrap();
 
-        assert_eq!("1", computed.get());
+        assert_eq!("1", *computed.get());
     }
 }

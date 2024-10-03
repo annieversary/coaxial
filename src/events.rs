@@ -131,7 +131,7 @@ mod tests {
         ctx.events.handle("click".to_string(), Value::Null);
         ctx.events.join_set.join_next().await.unwrap().unwrap();
 
-        assert_eq!("clicked :D", state.get());
+        assert_eq!("clicked :D", *state.get());
     }
 
     #[tokio::test]

@@ -27,7 +27,7 @@ async fn counter(mut ctx: Context) -> CoaxialResponse {
     let counter = ctx.use_state(0i32);
 
     let update = ctx.use_closure(move |Query(query): Query<CounterQuery>| async move {
-        counter.set(counter.get() + query.amount);
+        counter.set(*counter.get() + query.amount);
     });
 
     ctx.with(div(

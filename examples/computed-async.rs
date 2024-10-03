@@ -21,16 +21,19 @@ async fn counter(mut ctx: Context) -> CoaxialResponse {
 
     let delayed_counter = ctx.use_computed_async_with(
         counter,
-        |counter: i32| async move {
-            tokio::time::sleep(tokio::time::Duration::from_secs(3)).await;
+        |counter| {
+            let counter = *counter;
+            async move {
+                tokio::time::sleep(tokio::time::Duration::from_secs(3)).await;
 
-            counter
+                counter
+            }
         },
         InitialValue::Value(0),
     );
 
     let update = ctx.use_closure(move || async move {
-        counter.set(counter.get() + 1);
+        counter.set(*counter.get() + 1);
     });
 
     ctx.with(div(

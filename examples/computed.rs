@@ -18,10 +18,10 @@ async fn main() {
 async fn counter(mut ctx: Context) -> CoaxialResponse {
     let counter = ctx.use_state(0i32);
 
-    let counter_plus_1 = ctx.use_computed(counter, |counter: i32| counter + 1);
+    let counter_plus_1 = ctx.use_computed(counter, |counter| *counter + 1);
 
     let update = ctx.use_closure(move || async move {
-        counter.set(counter.get() + 1);
+        counter.set(*counter.get() + 1);
     });
 
     ctx.with(div(

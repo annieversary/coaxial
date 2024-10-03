@@ -207,7 +207,7 @@ mod tests {
         ctx.closures.run(closure.id, &parts(), &());
         ctx.closures.join_set.join_next().await.unwrap().unwrap();
 
-        assert_eq!(1, state.get());
+        assert_eq!(1, *state.get());
     }
 
     #[tokio::test]
@@ -225,6 +225,6 @@ mod tests {
         ctx.closures.run(closure.id, &parts(), &());
         ctx.closures.join_set.join_next().await.unwrap().unwrap();
 
-        assert_eq!("other string", state.get());
+        assert_eq!("other string", *state.get());
     }
 }

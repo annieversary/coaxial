@@ -5,7 +5,7 @@ use coaxial::{
     context::Context,
     html::{body, button, div, head, html, p, strong, style, Content, ContentValue},
     live::live,
-    CoaxialResponse,
+    CoaxialResponse, StateGet,
 };
 
 #[tokio::main]
@@ -50,22 +50,23 @@ async fn counter(mut ctx: Context) -> CoaxialResponse {
     let clicks = ctx.use_state(0u32);
 
     let click = ctx.use_closure(move || async move {
-        clicks.set(clicks.get() + 1);
+        clicks.set(*clicks.get() + 1);
     });
 
     let add = ctx.use_closure(move || async move {
-        counter.set(counter.get() + 1);
+        // we can also modify the value with a closure
+        counter.modify(|value| value + 1);
 
         click.call();
     });
     let sub = ctx.use_closure(move || async move {
-        counter.set(counter.get() - 1);
-        clicks.set(clicks.get() + 1);
+        counter.set(*counter.get() - 1);
+        clicks.set(*clicks.get() + 1);
     });
 
-    let counter_plus_1 = ctx.use_computed(counter, move |counter: i32| {
+    let counter_plus_1 = ctx.use_computed(counter, |counter: StateGet<'_, i32>| {
         // there's no actual need for this to be a string, it's just to showcase that the output can be anything
-        (counter + 1).to_string()
+        (*counter + 1).to_string()
     });
 
     let element = div(
