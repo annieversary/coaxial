@@ -3,10 +3,7 @@ use std::{collections::HashMap, fmt::Display, future::Future, pin::Pin, sync::Ar
 use serde::de::DeserializeOwned;
 use tokio::task::JoinSet;
 
-use crate::{
-    random_id::RandomId,
-    states::{State, StateGet},
-};
+use crate::{random_id::RandomId, states::State};
 
 pub(crate) type OnChangeHandler = Arc<dyn Fn() + 'static + Send + Sync>;
 pub(crate) type OnChangeHandlerAsync =
@@ -33,23 +30,24 @@ impl ComputedStates {
         I: StateGetter + Send + Sync + 'static,
         F: Fn(<I as StateGetter>::Output<'_>) -> O + Send + Sync + 'static,
     {
-        let compute = Arc::new(compute);
-        for id in states.id_list() {
-            let compute = compute.clone();
-            let states = states.clone();
-            let on_change_listener = move || {
-                state.set(compute(states.get()));
-            };
+        todo!()
+        // let compute = Arc::new(compute);
+        // for id in states.id_list() {
+        //     let compute = compute.clone();
+        //     let states = states.clone();
+        //     let on_change_listener = move || {
+        //         state.set(compute(states.get()));
+        //     };
 
-            if let Some(value) = self.on_change_handler.get_mut(&id) {
-                value.push(Arc::new(on_change_listener));
-            } else {
-                self.on_change_handler
-                    .insert(id, vec![Arc::new(on_change_listener)]);
-            }
-        }
+        //     if let Some(value) = self.on_change_handler.get_mut(&id) {
+        //         value.push(Arc::new(on_change_listener));
+        //     } else {
+        //         self.on_change_handler
+        //             .insert(id, vec![Arc::new(on_change_listener)]);
+        //     }
+        // }
 
-        ComputedState(state)
+        // ComputedState(state)
     }
 
     pub(crate) fn add_computed_async<O, I, F, FUT>(
@@ -65,30 +63,31 @@ impl ComputedStates {
         F: Fn(<I as StateGetter>::Output<'_>) -> FUT + Send + Sync + 'static,
         FUT: Future<Output = O> + Send + Sync + 'static,
     {
-        let compute = Arc::new(compute);
-        let _states = states.clone();
-        let on_change_listener: OnChangeHandlerAsync = Arc::new(move || {
-            let compute = compute.clone();
-            let states = _states.clone();
-            Box::pin(async move {
-                state.set(compute(states.get()).await);
-            })
-        });
+        todo!()
+        // let compute = Arc::new(compute);
+        // let _states = states.clone();
+        // let on_change_listener: OnChangeHandlerAsync = Arc::new(move || {
+        //     let compute = compute.clone();
+        //     let states = _states.clone();
+        //     Box::pin(async move {
+        //         state.set(compute(states.get()).await);
+        //     })
+        // });
 
-        for id in states.id_list() {
-            if let Some(value) = self.on_change_handler_async.get_mut(&id) {
-                value.push(on_change_listener.clone());
-            } else {
-                self.on_change_handler_async
-                    .insert(id, vec![on_change_listener.clone()]);
-            }
-        }
+        // for id in states.id_list() {
+        //     if let Some(value) = self.on_change_handler_async.get_mut(&id) {
+        //         value.push(on_change_listener.clone());
+        //     } else {
+        //         self.on_change_handler_async
+        //             .insert(id, vec![on_change_listener.clone()]);
+        //     }
+        // }
 
-        if immediately_recompute {
-            self.join_set.spawn(on_change_listener());
-        }
+        // if immediately_recompute {
+        //     self.join_set.spawn(on_change_listener());
+        // }
 
-        ComputedState(state)
+        // ComputedState(state)
     }
 
     /// Recompute sync ComputedStates that depend on the state with id `id`
@@ -118,20 +117,19 @@ pub enum InitialValue<O> {
 
 pub struct ComputedState<T: 'static>(pub(crate) State<T>);
 
-// we implement Copy and Clone instead of deriving them, cause we dont need the
+// we implement Clone instead of deriving them, cause we dont need the
 // `T: Clone` bound
 impl<T: 'static> Clone for ComputedState<T> {
     fn clone(&self) -> Self {
-        *self
+        Self(self.0.clone())
     }
 }
-impl<T: 'static> Copy for ComputedState<T> {}
 
-impl<T: Clone + Send + Sync + 'static> ComputedState<T> {
-    pub fn get(&self) -> StateGet<'_, T> {
-        self.0.get()
-    }
-}
+// impl<T: Clone + Send + Sync + 'static> ComputedState<T> {
+//     pub fn get(&self) -> StateGet<'_, T> {
+//         self.0.get()
+//     }
+// }
 
 pub trait StateGetter: Clone + Send + Sync + 'static {
     type Output<'a>;
@@ -141,34 +139,34 @@ pub trait StateGetter: Clone + Send + Sync + 'static {
     fn id_list(&self) -> impl Iterator<Item = RandomId>;
 }
 
-impl<T: Clone + Send + Sync + 'static> StateGetter for State<T> {
-    type Output<'a> = StateGet<'a, T>;
+// impl<T: Clone + Send + Sync + 'static> StateGetter for State<T> {
+//     type Output<'a> = StateGet<'a, T>;
 
-    fn get(&self) -> Self::Output<'_> {
-        State::get(self)
-    }
+//     fn get(&self) -> Self::Output<'_> {
+//         State::get(self)
+//     }
 
-    fn id_list(&self) -> impl Iterator<Item = RandomId> {
-        [self.id].into_iter()
-    }
-}
+//     fn id_list(&self) -> impl Iterator<Item = RandomId> {
+//         [self.id].into_iter()
+//     }
+// }
 
-// TODO add more tuples
-impl<T, U> StateGetter for (State<T>, State<U>)
-where
-    T: Clone + Send + Sync + 'static,
-    U: Clone + Send + Sync + 'static,
-{
-    type Output<'a> = (StateGet<'a, T>, StateGet<'a, U>);
+// // TODO add more tuples
+// impl<T, U> StateGetter for (State<T>, State<U>)
+// where
+//     T: Clone + Send + Sync + 'static,
+//     U: Clone + Send + Sync + 'static,
+// {
+//     type Output<'a> = (StateGet<'a, T>, StateGet<'a, U>);
 
-    fn get(&self) -> Self::Output<'_> {
-        (State::get(&self.0), State::get(&self.1))
-    }
+//     fn get(&self) -> Self::Output<'_> {
+//         (State::get(&self.0), State::get(&self.1))
+//     }
 
-    fn id_list(&self) -> impl Iterator<Item = RandomId> {
-        [self.0.id, self.1.id].into_iter()
-    }
-}
+//     fn id_list(&self) -> impl Iterator<Item = RandomId> {
+//         [self.0.id, self.1.id].into_iter()
+//     }
+// }
 
 #[cfg(test)]
 mod tests {

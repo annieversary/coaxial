@@ -3,10 +3,12 @@ use coaxial::{
     attrs,
     config::Config,
     context::Context,
-    html::{body, button, div, head, html, p, strong, style, Content, ContentValue},
+    html::{body, button, div, head, html, p, strong, style, Content, ContentValue, Element},
     live::live,
-    CoaxialResponse, StateGet,
+    states::State,
+    CoaxialResponse,
 };
+use futures_signals::signal::Mutable;
 
 #[tokio::main]
 async fn main() {
@@ -45,73 +47,117 @@ async fn main() {
     axum::serve(listener, app).await.unwrap();
 }
 
+struct Function<Component> {
+    f: fn(&Component),
+}
+
+// the user should probably we writing something like
+struct MyCounter {
+    counter: i32,
+    clicks: u32,
+}
+
+// then a macro generates this
+
+struct Counter {
+    counter: State<i32>,
+    clicks: State<u32>,
+
+    click: Function<Self>,
+    add: Function<Self>,
+    sub: Function<Self>,
+}
+
+impl Counter {
+    fn new(ctx: &mut Context) -> Self {
+        // TODO do we just store the closures in the actual struct?
+        // it feels ugly though
+        // the code you end up writing looks weird
+
+        // and how the fuck do u end up calling this function?
+        // what do we send to the client that we can bounce up to the server
+        // that can get called?
+        // we dont have the function name or the field name
+
+        // enums make a lot more sense for that side
+        // but i really dont wanna do like a big update function
+
+        Self {
+            counter: ctx.use_state(0i32),
+            clicks: ctx.use_state(0u32),
+
+            click: Function { f: Self::click },
+            add: Function { f: Self::add },
+            sub: Function { f: Self::sub },
+        }
+    }
+
+    fn click(&self) {
+        self.clicks.replace_with(|value| *value + 1);
+    }
+
+    fn add(&self) {
+        self.counter.replace_with(|value| *value + 1);
+        self.click();
+    }
+
+    fn sub(&self) {
+        self.counter.replace_with(|value| *value - 1);
+        self.click();
+    }
+
+    // TODO so i need a way to wrap closures and add them to the context
+    // maybe in new?
+
+    fn build(&self) -> Element {
+        div(
+            Content::List(vec![
+                div(
+                    Content::List(vec![
+                        button(
+                            "increment counter",
+                            attrs!(
+                                "onclick" => self.add,
+                                "title" => ("go from ",self.counter," to ",self.counter,"+1")
+                            ),
+                        )
+                        .into(),
+                        button("decrement counter", attrs!("onclick" => self.sub)).into(),
+                        button("click for fun :3", attrs!("onclick" => self.click)).into(),
+                    ]),
+                    attrs!("class" => "buttons", "data-clicks" => self.clicks),
+                )
+                .into(),
+                p(
+                    Content::List(vec![
+                        "counter is ".into(),
+                        self.counter.into(),
+                        ". ".into(),
+                        strong("Wow!", Default::default()).into(),
+                        " counter is ".into(),
+                        self.counter.into(),
+                        " and there are ".into(),
+                        self.clicks.into(),
+                        " total clicks. ".into(),
+                        strong(
+                            "This next number is the counter again: ",
+                            Default::default(),
+                        )
+                        .into(),
+                        self.counter.into(),
+                    ]),
+                    // counter,
+                    Default::default(),
+                )
+                .into(),
+            ]),
+            attrs!("class" => "container"),
+        )
+    }
+}
+
 async fn counter(mut ctx: Context) -> CoaxialResponse {
-    let counter = ctx.use_state(0i32);
-    let clicks = ctx.use_state(0u32);
+    let counter = Counter::new(&mut ctx);
 
-    let click = ctx.use_closure(move || async move {
-        clicks.set(*clicks.get() + 1);
-    });
-
-    let add = ctx.use_closure(move || async move {
-        // we can also modify the value with a closure
-        counter.modify(|value| value + 1);
-
-        click.call();
-    });
-    let sub = ctx.use_closure(move || async move {
-        counter.set(*counter.get() - 1);
-        clicks.set(*clicks.get() + 1);
-    });
-
-    let counter_plus_1 = ctx.use_computed(counter, |counter: StateGet<'_, i32>| {
-        // there's no actual need for this to be a string, it's just to showcase that the output can be anything
-        (*counter + 1).to_string()
-    });
-
-    let element = div(
-        Content::List(vec![
-            div(
-                Content::List(vec![
-                    button(
-                        "increment counter",
-                        attrs!(
-                            "onclick" => add,
-                            "title" => ("go from ",counter," to ",counter_plus_1)
-                        ),
-                    )
-                    .into(),
-                    button("decrement counter", attrs!("onclick" => sub)).into(),
-                    button("click for fun :3", attrs!("onclick" => click)).into(),
-                ]),
-                attrs!("class" => "buttons", "data-clicks" => clicks),
-            )
-            .into(),
-            p(
-                Content::List(vec![
-                    "counter is ".into(),
-                    counter.into(),
-                    ". ".into(),
-                    strong("Wow!", Default::default()).into(),
-                    " counter is ".into(),
-                    counter.into(),
-                    " and there are ".into(),
-                    clicks.into(),
-                    " total clicks. ".into(),
-                    strong(
-                        "This next number is the counter again: ",
-                        Default::default(),
-                    )
-                    .into(),
-                    counter.into(),
-                ]),
-                // counter,
-                Default::default(),
-            )
-            .into(),
-        ]),
-        attrs!("class" => "container"),
-    );
-
-    ctx.with(element)
+    ctx.with(counter.build())
 }
