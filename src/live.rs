@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use std::{collections::HashMap, sync::Arc};
 
 use axum::{
     body::Body,
@@ -9,12 +9,19 @@ use axum::{
     routing::{get, MethodRouter},
     Extension,
 };
+use futures::{stream::select_all, StreamExt};
 use rand::random;
 use tokio::{select, sync::mpsc::UnboundedSender};
 
 use crate::{
-    config::Config, context::Context, events::Events, handler::CoaxialHandler, html::DOCTYPE_HTML,
-    random_id::RandomId, reactive_js::Reactivity, states::States,
+    config::Config,
+    context::Context,
+    events::Events,
+    handler::CoaxialHandler,
+    html::DOCTYPE_HTML,
+    random_id::RandomId,
+    reactive_js::Reactivity,
+    states::{AnyState, States},
 };
 
 pub fn live<T, H, S>(handler: H) -> MethodRouter<S>
@@ -89,7 +96,8 @@ where
 
                     let mut context = body.context;
 
-                    let mut changes = Vec::new();
+                    let mut changes_stream = context.states.streams.ready_chunks(10);
+
                     let mut closure_calls = Vec::new();
 
                     loop {
@@ -101,7 +109,7 @@ where
 
                                 let res = handle_socket_message(
                                     msg.map_err(|_| ()),
-                                    &context.states,
+                                    &mut context.states.states,
                                     &context.closures.call_tx,
                                     &mut context.events,
                                 )
@@ -113,19 +121,19 @@ where
                                     Err(SocketError::Fatal) => return,
                                 };
                             }
-                            _ = context.states.changes_rx.recv_many(&mut changes, 10000) => {
-                                let mut updates = Vec::new();
-                                std::mem::swap(&mut changes, &mut updates);
+                            changes = changes_stream.select_next_some() => {
+                                    for (id, _) in &changes {
+                                        context.computed_states.recompute_dependents(*id);
+                                    }
 
-                                for (id, _) in &updates {
-                                    context.computed_states.recompute_dependents(*id);
-                                }
+                                    let updates = changes.into_iter().filter_map(|(id, v)| {
+                                        let out = serde_json::to_string(&v).ok()?;
+                                        Some((id.to_string(), out))
+                                    }).collect::<Vec<_>>();
 
-                                let updates = updates.into_iter().map(|(id, v)| (id.to_string(), v)).collect::<Vec<_>>();
-
-                                let out = OutMessage::Update { fields: &updates };
-                                let msg = axum::extract::ws::Message::Text(serde_json::to_string(&out).unwrap());
-                                socket.send(msg).await.unwrap();
+                                    let out = OutMessage::Update { fields: &updates };
+                                    let msg = axum::extract::ws::Message::Text(serde_json::to_string(&out).unwrap());
+                                    socket.send(msg).await.unwrap();
                             }
                             _ = context.closures.call_rx.recv_many(&mut closure_calls, 10000) => {
                                 let mut closures: Vec<RandomId> = Vec::new();
@@ -150,7 +158,7 @@ enum SocketError {
 
 async fn handle_socket_message(
     msg: Result<Message, ()>,
-    states: &States,
+    states: &mut HashMap<RandomId, Arc<dyn AnyState>>,
     closure_call_tx: &UnboundedSender<RandomId>,
     events: &mut Events,
 ) -> Result<(), SocketError> {
@@ -173,7 +181,11 @@ async fn handle_socket_message(
             events.handle(name, params);
         }
         InMessage::SetState { id, value } => {
-            states.set(id, value);
+            let Some(state) = states.get_mut(&id) else {
+                // TODO return an error
+                panic!("state not found");
+            };
+            state.set_value(value);
         }
     }
 

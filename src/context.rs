@@ -1,13 +1,10 @@
 use axum::response::Response;
+use futures::StreamExt;
+use futures_signals::signal::SignalExt;
 use generational_box::{AnyStorage, Owner, SyncStorage};
 use rand::{rngs::StdRng, SeedableRng};
-use serde::de::DeserializeOwned;
-use std::{
-    fmt::{Display, Write},
-    future::Future,
-    panic::Location,
-    sync::Arc,
-};
+use serde::{de::DeserializeOwned, Serialize};
+use std::{fmt::Write, future::Future, sync::Arc};
 
 use crate::{
     closures::{Closure, ClosureInner, ClosureTrait, ClosureWrapper, Closures, IntoClosure},
@@ -15,7 +12,7 @@ use crate::{
     events::Events,
     html::{Content, ContentValue, Element},
     random_id::RandomId,
-    states::{State, StateInner, States},
+    states::{State, States},
     CoaxialResponse, Output,
 };
 
@@ -75,140 +72,35 @@ impl<S> Context<S> {
         }
     }
 
-    pub fn use_state_inner<T: DeserializeOwned + Display + Send + Sync + 'static>(
+    fn use_state_inner<T: DeserializeOwned + Serialize + Send + Sync + 'static>(
         &mut self,
         value: T,
-        #[cfg(any(debug_assertions, feature = "debug_ownership"))] caller: &'static Location<
-            'static,
-        >,
     ) -> State<T> {
         let id = RandomId::from_rng(&mut self.rng);
-        let state = State {
-            inner: self.state_owner.insert_with_caller(
-                StateInner {
-                    value,
-                    changes_tx: self.states.changes_tx.clone(),
-                },
-                #[cfg(any(debug_assertions, feature = "debug_ownership"))]
-                caller,
-            ),
-            id,
-        };
 
-        self.states.insert(state.id, Arc::new(state));
+        let state = State::new(value, id);
+        let stream = state
+            .inner
+            .signal_ref(move |value| {
+                (
+                    id,
+                    serde_json::to_value(value).expect("could not convert to Value"),
+                )
+            })
+            .to_stream()
+            .boxed();
+
+        self.states.insert(state.id, Arc::new(state.clone()));
+        self.states.streams.push(stream);
 
         state
     }
 
-    #[track_caller]
-    pub fn use_state<T: DeserializeOwned + Display + Send + Sync + 'static>(
+    pub fn use_state<T: DeserializeOwned + Serialize + Send + Sync + 'static>(
         &mut self,
         value: T,
     ) -> State<T> {
-        self.use_state_inner(
-            value,
-            #[cfg(any(debug_assertions, feature = "debug_ownership"))]
-            std::panic::Location::caller(),
-        )
-    }
-
-    #[track_caller]
-    pub fn use_computed<O, I, F>(&mut self, states: I, compute: F) -> ComputedState<O>
-    where
-        O: DeserializeOwned + Display + Send + Sync + 'static,
-        I: StateGetter + Send + Sync + 'static,
-        F: Fn(<I as StateGetter>::Output<'_>) -> O + Send + Sync + 'static,
-    {
-        let state = self.use_state_inner(
-            compute(states.get()),
-            #[cfg(any(debug_assertions, feature = "debug_ownership"))]
-            std::panic::Location::caller(),
-        );
-
-        self.computed_states.add_computed(state, states, compute)
-    }
-
-    #[track_caller]
-    pub fn use_computed_with<O, I, F>(
-        &mut self,
-        states: I,
-        compute: F,
-        initial: InitialValue<O>,
-    ) -> ComputedState<O>
-    where
-        O: DeserializeOwned + Display + Send + Sync + 'static,
-        I: StateGetter + Send + Sync + 'static,
-        F: Fn(<I as StateGetter>::Output<'_>) -> O + Send + Sync + 'static,
-    {
-        let initial = match initial {
-            InitialValue::Value(value) => value,
-            // it's a blocking function, so we can't run it in the background.
-            // we just recompute and ignore the provided value
-            InitialValue::ValueAndCompute(_value) => compute(states.get()),
-        };
-
-        let state = self.use_state_inner(
-            initial,
-            #[cfg(any(debug_assertions, feature = "debug_ownership"))]
-            std::panic::Location::caller(),
-        );
-
-        self.computed_states.add_computed(state, states, compute)
-    }
-
-    pub async fn use_computed_async<O, I, F, FUT>(
-        &mut self,
-        states: I,
-        compute: F,
-    ) -> ComputedState<O>
-    where
-        O: DeserializeOwned + Display + Send + Sync + 'static,
-        I: StateGetter,
-        F: Fn(<I as StateGetter>::Output<'_>) -> FUT + Send + Sync + 'static,
-        FUT: Future<Output = O> + Send + Sync + 'static,
-    {
-        // no tracking caller cause this function is async and track_caller doesn't work on async functions yet
-        // https://github.com/rust-lang/rust/issues/110011
-        let state = self.use_state(compute(states.get()).await);
-
-        self.computed_states
-            .add_computed_async(state, states, compute, false)
-    }
-
-    #[track_caller]
-    pub fn use_computed_async_with<O, I, F, FUT>(
-        &mut self,
-        states: I,
-        compute: F,
-        initial: InitialValue<O>,
-    ) -> ComputedState<O>
-    where
-        O: DeserializeOwned + Display + Send + Sync + 'static,
-        I: StateGetter,
-        F: Fn(<I as StateGetter>::Output<'_>) -> FUT + Send + Sync + 'static,
-        FUT: Future<Output = O> + Send + Sync + 'static,
-    {
-        let mut needs_recompute = false;
-        let initial = match initial {
-            InitialValue::Value(value) => value,
-            InitialValue::ValueAndCompute(value) => {
-                needs_recompute = true;
-                value
-            }
-        };
-
-        let state = self.use_state_inner(
-            initial,
-            #[cfg(any(debug_assertions, feature = "debug_ownership"))]
-            std::panic::Location::caller(),
-        );
-
-        self.computed_states.add_computed_async(
-            state,
-            states,
-            compute,
-            needs_recompute && self.in_websocket,
-        )
+        self.use_state_inner(value)
     }
 
     pub fn on_client_event<F, Fut, P>(&mut self, name: impl ToString, closure: F)

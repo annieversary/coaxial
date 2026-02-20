@@ -1,133 +1,102 @@
-use generational_box::{AnyStorage, BorrowError, BorrowMutError, GenerationalBox, SyncStorage};
+use futures::stream::{SelectAll, Stream};
+use futures_signals::signal::Mutable;
 use serde::de::DeserializeOwned;
 use serde_json::Value;
-use std::{collections::HashMap, fmt::Display, sync::Arc};
-use tokio::sync::mpsc::{unbounded_channel, UnboundedReceiver, UnboundedSender};
+use std::{collections::HashMap, sync::Arc};
 
 use crate::random_id::RandomId;
 
+#[derive(Default)]
 pub(crate) struct States {
-    states: HashMap<RandomId, Arc<dyn AnyState>>,
+    // TODO do we actually need to store this?
+    // i think we do, so we can set things from the client
+    pub(crate) states: HashMap<RandomId, Arc<dyn AnyState>>,
 
-    pub(crate) changes_rx: UnboundedReceiver<(RandomId, String)>,
-    pub(crate) changes_tx: UnboundedSender<(RandomId, String)>,
+    pub(crate) streams:
+        SelectAll<std::pin::Pin<Box<dyn Stream<Item = (RandomId, serde_json::Value)> + Send>>>,
 }
 
 impl States {
     pub(crate) fn insert(&mut self, id: RandomId, state: Arc<dyn AnyState>) {
         self.states.insert(id, state);
     }
-
-    pub(crate) fn set(&self, id: RandomId, value: Value) {
-        let Some(state) = self.states.get(&id) else {
-            // TODO return an error
-            panic!("state not found");
-        };
-        state.set_value(value);
-    }
 }
 
-impl Default for States {
-    fn default() -> Self {
-        let (changes_tx, changes_rx) = unbounded_channel();
+pub struct State<T> {
+    pub(crate) inner: Mutable<T>,
+    pub(crate) id: RandomId,
+}
+impl<T> Clone for State<T> {
+    fn clone(&self) -> Self {
         Self {
-            states: Default::default(),
-            changes_rx,
-            changes_tx,
+            inner: self.inner.clone(),
+            id: self.id,
         }
     }
 }
 
-pub struct State<T: 'static> {
-    pub(crate) inner: GenerationalBox<StateInner<T>, SyncStorage>,
-    pub(crate) id: RandomId,
-}
-
-// we implement Copy and Clone instead of deriving them, cause we dont need the
-// `T: Clone` bound
-impl<T: 'static> Clone for State<T> {
-    fn clone(&self) -> Self {
-        *self
-    }
-}
-impl<T: 'static> Copy for State<T> {}
-
-pub(crate) struct StateInner<T: 'static> {
-    pub(crate) value: T,
-    pub(crate) changes_tx: UnboundedSender<(RandomId, String)>,
-}
-
-/// Type returned by State::get
-pub type StateGet<'a, T> = <SyncStorage as AnyStorage>::Ref<'a, T>;
-
-impl<T: Send + Sync + 'static> State<T> {
-    // TODO these types should be wrapped so it's not in our public interface
-    pub fn get(&self) -> StateGet<'_, T> {
-        self.try_get().unwrap()
+impl<T> State<T> {
+    pub(crate) fn new(value: T, id: RandomId) -> Self {
+        Self {
+            inner: Mutable::new(value),
+            id,
+        }
     }
 
-    pub fn try_get(&self) -> Result<StateGet<'_, T>, BorrowError> {
-        let inner = self.inner.try_read()?;
+    pub fn set(&mut self, value: T) {
+        self.inner.set(value);
+    }
 
-        Ok(SyncStorage::map(inner, |v| &v.value))
+    pub fn lock_mut(&self) -> futures_signals::signal::MutableLockMut<T> {
+        self.inner.lock_mut()
+    }
+
+    pub fn lock_ref(&self) -> futures_signals::signal::MutableLockRef<T> {
+        self.inner.lock_ref()
+    }
+
+    pub fn replace(&self, value: T) -> T {
+        self.inner.replace(value)
+    }
+
+    pub fn replace_with<F>(&self, f: F) -> T
+    where
+        F: FnOnce(&mut T) -> T,
+    {
+        self.inner.replace_with(f)
     }
 }
 
-impl<T: Display + Send + Sync + 'static> State<T> {
-    pub fn set(&self, value: T) {
-        self.try_set(value).unwrap()
-    }
-
-    pub fn try_set(&self, value: T) -> Result<(), BorrowMutError> {
-        let string = value.to_string();
-
-        let mut w = self.inner.try_write()?;
-        w.value = value;
-
-        drop(w);
-
-        let w = self.inner.read();
-        w.changes_tx.send((self.id, string)).unwrap();
-
-        Ok(())
-    }
-
-    pub fn try_modify(&self, f: impl Fn(&T) -> T) -> Result<(), ModifyError> {
-        let value = self.try_get().map_err(ModifyError::BorrowError)?;
-        let value = f(&*value);
-        self.try_set(value).map_err(ModifyError::BorrowMutError)?;
-
-        Ok(())
-    }
-
-    pub fn modify(&self, f: impl Fn(&T) -> T) {
-        self.try_modify(f).unwrap()
+impl<T: Copy> State<T> {
+    pub fn get(&self) -> T {
+        self.inner.get()
     }
 }
-
-#[derive(Debug)]
-pub enum ModifyError {
-    BorrowError(BorrowError),
-    BorrowMutError(BorrowMutError),
+impl<T: Clone> State<T> {
+    pub fn get_cloned(&self) -> T {
+        self.inner.get_cloned()
+    }
 }
 
 pub trait AnyState: Send + Sync + 'static {
-    fn set_value(&self, value: serde_json::Value);
+    fn set_value(&self, value: Value);
 }
 
-impl<T: DeserializeOwned + Display + Send + Sync + 'static> AnyState for State<T> {
+impl<T: DeserializeOwned + Send + Sync + 'static> AnyState for State<T> {
     fn set_value(&self, value: serde_json::Value) {
         // numbers arrive as strings, so the from_value later doesn't work
         // we manually test inside the string.
         // if it succeeds we set the value, and if it fails we ignore and try the normal deserialize
         if let serde_json::Value::String(s) = &value {
             if let Ok(value) = serde_json::from_str::<T>(s) {
-                self.set(value);
+                let mut lock = self.inner.lock_mut();
+                *lock = value;
                 return;
             }
         }
 
         let value: T = serde_json::from_value(value).unwrap();
-        self.set(value);
+        let mut lock = self.inner.lock_mut();
+        *lock = value;
     }
 }

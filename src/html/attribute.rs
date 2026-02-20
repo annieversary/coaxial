@@ -242,7 +242,7 @@ where
 {
     fn from(value: State<T>) -> Self {
         Self {
-            display: value.get().to_string(),
+            display: value.inner.lock_ref().to_string(),
             state_id: value.id.to_string(),
         }
     }

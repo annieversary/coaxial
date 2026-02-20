@@ -10,6 +10,8 @@ license = "MIT OR Apache-2.0"
 
 [dependencies]
 axum = { version = "0.7.5", features = ["ws"] }
+futures = "0.3.31"
+futures-signals = "0.3.34"
 generational-box = "0.5.1"
 html-escape = "0.2.13"
 rand = "0.8.5"
